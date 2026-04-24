@@ -22,5 +22,6 @@ void add_edge(Graph* graph, int src, int dest, int weight);
 void print_graph(const Graph* graph);
 void free_graph(Graph* graph);
 
+Graph* read_graph_from_file(const char* filename, int* start, int* end);
 
 #endif //GRAPH_MODULE_GRAPH_H
