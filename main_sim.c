@@ -6,6 +6,7 @@
 
 #include "dijkstra.h"
 #include "graph.h"
+
 #include "file_reader.h"
 
 #define WINDOW_WIDTH 1220
