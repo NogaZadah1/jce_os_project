@@ -7,6 +7,8 @@
 #include "dijkstra.h"
 #include "graph.h"
 
+#include "file_reader.h"
+
 #define WINDOW_WIDTH 1220
 #define WINDOW_HEIGHT 860
 #define NODE_RADIUS 24
