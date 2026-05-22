@@ -7,8 +7,6 @@
 #include "dijkstra.h"
 #include "graph.h"
 
-#include "file_reader.h"
-
 #define WINDOW_WIDTH 1220
 #define WINDOW_HEIGHT 860
 #define NODE_RADIUS 24
@@ -46,32 +44,6 @@ static void draw_edge_weight(int x, int y, int weight) {
     DrawText(text, tx, ty - 1, 22, (Color){14, 18, 45, 255});
     DrawText(text, tx, ty + 1, 22, (Color){14, 18, 45, 255});
     DrawText(text, tx, ty, 22, (Color){255, 252, 210, 255});
-}
-
-/* Function to draw a prominent directional arrow on an edge */
-static void draw_arrow(Vector2 from, Vector2 to, Color color) {
-    float dx = to.x - from.x;
-    float dy = to.y - from.y;
-    float len = sqrtf(dx * dx + dy * dy);
-    
-    if (len > 0.001f) {
-        float ux = dx / len;
-        float uy = dy / len;
-        
-        /* Position the arrow at 75% of the edge length to prevent overlap with the destination node */
-        Vector2 tip = { from.x + dx * 0.75f, from.y + dy * 0.75f };
-        
-        float arrow_len = 22.0f;   /* Length of the arrowhead */
-        float arrow_width = 14.0f; /* Width of the arrowhead */
-        
-        /* Calculate the two base vertices of the triangle representing the arrowhead */
-        Vector2 left = { tip.x - ux * arrow_len + uy * arrow_width, tip.y - uy * arrow_len - ux * arrow_width };
-        Vector2 right = { tip.x - ux * arrow_len - uy * arrow_width, tip.y - uy * arrow_len + ux * arrow_width };
-        
-        /* Draw the triangle twice with different vertex orders to ensure it renders correctly */
-        DrawTriangle(tip, left, right, color);
-        DrawTriangle(tip, right, left, color);
-    }
 }
 
 static void draw_ghost_node(Vector2 p, float size, Color body_color, int node_id) {
@@ -287,24 +259,6 @@ static void free_path(Path* path) {
     path->length = 0;
 }
 
-static int get_edge_weight(const Graph* graph, int src, int dest) {
-    Edge* edge;
-
-    if (graph == NULL || src < 0 || src >= graph->num_vertices) {
-        return 1;
-    }
-
-    edge = graph->adj_lists[src];
-    while (edge != NULL) {
-        if (edge->dest == dest) {
-            return edge->weight;
-        }
-        edge = edge->next;
-    }
-
-    return 1;
-}
-
 static void render_scene(
     const Graph* graph,
     const Point* positions,
@@ -312,9 +266,7 @@ static void render_scene(
     const int* food_alive,
     float pacman_x,
     float pacman_y,
-    float pacman_angle_deg,
-    int is_playing,
-    int arrived
+    float pacman_angle_deg
 ) {
     int i;
     Edge* edge;
@@ -365,11 +317,7 @@ static void render_scene(
             int b = path->nodes[i + 1];
             Vector2 p1 = {positions[a].x, positions[a].y};
             Vector2 p2 = {positions[b].x, positions[b].y};
-            
-            Color path_color = (Color){255, 193, 66, 255};
-            DrawLineEx(p1, p2, 4.0f, path_color);
-            /* Draw the arrow only on the shortest path */
-            draw_arrow(p1, p2, path_color); 
+            DrawLineEx(p1, p2, 4.0f, (Color){255, 193, 66, 255});
         }
     }
 
@@ -379,22 +327,6 @@ static void render_scene(
     }
 
     (void)food_alive;
-
-
-    Rectangle play_button = { 30, 30, 130, 45 };
-    const char* button_text = is_playing ? "Stop" : "Play";
-
-    DrawRectangleRounded(play_button, 0.25f, 8, (Color){30, 90, 150, 255});
-    DrawRectangleRoundedLines(play_button, 0.25f, 8, (Color){255, 255, 255, 255});
-    DrawText(button_text, (int)(play_button.x + 35), (int)(play_button.y + 12), 22, RAYWHITE);
-
-    if (arrived == 1) {
-        DrawText("Arrived at destination!",
-                 WINDOW_WIDTH / 2 - 160,
-                 30,
-                 26,
-                 RAYWHITE);
-    }
 
     draw_pacman((Vector2){pacman_x, pacman_y}, (float)PACMAN_RADIUS + 1.5f, pacman_angle_deg);
 
@@ -411,14 +343,9 @@ int main(void) {
     int start, end;
     int running = 1;
     int segment = 0;
-    int is_playing = 0;
-    int arrived = 0;
-    int is_waiting = 0;
-    double wait_start_time = 0.0;
     float pacman_x = 0.0f;
     float pacman_y = 0.0f;
     float pacman_angle_deg = 0.0f;
-    float edge_progress = 0.0f;
     double last_time;
 
     graph = read_graph_from_file("input.txt", &start, &end);
@@ -498,79 +425,36 @@ int main(void) {
             running = 0;
         }
 
-        Rectangle play_button = { 30, 30, 130, 45 };
-
-        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) &&
-            CheckCollisionPointRec(GetMousePosition(), play_button) &&
-            arrived == 0) {
-            is_playing = !is_playing;
-            last_time = GetTime();
-            }
-
-        if (is_waiting == 1) {
-            if (GetTime() - wait_start_time >= 1.0) {
-                is_waiting = 0;
-                last_time = GetTime();
-            }
-        } else if (is_playing == 1 && segment < path.length - 1) {
+        if (segment < path.length - 1) {
             double now = GetTime();
             float dt = (float)(now - last_time);
-            int src_node = path.nodes[segment];
             int dst = path.nodes[segment + 1];
-
-            float sx = positions[src_node].x;
-            float sy = positions[src_node].y;
             float tx = positions[dst].x;
             float ty = positions[dst].y;
-
-            float dx = tx - sx;
-            float dy = ty - sy;
+            float dx = tx - pacman_x;
+            float dy = ty - pacman_y;
             float dist = sqrtf(dx * dx + dy * dy);
-
-            int edge_weight = get_edge_weight(graph, src_node, dst);
-            float edge_duration = edge_weight * 0.3f;
-
-            if (edge_duration <= 0.0f) {
-                edge_duration = 0.3f;
-            }
-
-            edge_progress += dt / edge_duration;
-
-            if (edge_progress > 1.0f) {
-                edge_progress = 1.0f;
-            }
-
-            pacman_x = sx + dx * edge_progress;
-            pacman_y = sy + dy * edge_progress;
-
+            float step = PACMAN_SPEED * dt;
             last_time = now;
 
             if (dist > 0.001f) {
                 pacman_angle_deg = atan2f(dy, dx) * RAD2DEG;
             }
 
-            if (edge_progress >= 1.0f) {
+            if (dist <= step || dist < 0.001f) {
                 pacman_x = tx;
                 pacman_y = ty;
                 food_alive[dst] = 0;
                 segment++;
-                edge_progress = 0.0f;
-
-                if (segment >= path.length - 1) {
-                    arrived = 1;
-                    is_playing = 0;
-                    is_waiting = 0;
-                } else {
-                    is_waiting = 1;
-                    wait_start_time = GetTime();
-                }
+            } else {
+                pacman_x += step * dx / dist;
+                pacman_y += step * dy / dist;
             }
         } else {
             last_time = GetTime();
         }
 
-     render_scene(graph, positions, &path, food_alive, pacman_x, pacman_y, pacman_angle_deg, is_playing, arrived);
-
+        render_scene(graph, positions, &path, food_alive, pacman_x, pacman_y, pacman_angle_deg);
     }
 
     CloseWindow();
