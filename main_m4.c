@@ -8,6 +8,7 @@
 #include "graph.h"
 #include "file_reader.h"
 #include "gui.h"
+#include "traveler.h"
 
 #define WINDOW_WIDTH 1220
 #define WINDOW_HEIGHT 860
@@ -172,7 +173,8 @@ int main(void) {
     Path full_route;
     Point* positions = NULL;
     int* food_alive = NULL;
-    int start, end;
+    Traveler* travelers = NULL;
+    int traveler_count = 0;
     int running = 1;
     int segment = 0;
     int is_playing = 0;
@@ -185,16 +187,54 @@ int main(void) {
     float edge_progress = 0.0f;
     double last_time;
 
-    graph = read_graph_from_file("input.txt", &start, &end);
-    if (graph == NULL) {
-        return 1;
+    if (!read_simulation_from_file(
+    "input_m4.txt",
+    &graph,
+    &travelers,
+    &traveler_count
+    )) {
+    return 1;
     }
 
-    result = dijkstra(graph, start, end);
-    if (result == NULL) {
-        free_graph(graph);
-        return 1;
+    printf("Traveler count: %d\n", traveler_count);
+
+    for (int i = 0; i < traveler_count; i++) {
+        printf(
+            "Traveler %d: %d -> %d\n",
+            i,
+            travelers[i].source,
+            travelers[i].destination
+        );
     }
+
+    for (int i = 0; i < traveler_count; i++) {
+    DijkstraResult* traveler_result = dijkstra(
+        graph,
+        travelers[i].source,
+        travelers[i].destination
+    );
+
+    if (traveler_result == NULL) {
+        printf("Traveler %d: failed to calculate path\n", i);
+        continue;
+    }
+
+    if (!build_path_from_dijkstra(&travelers[i], traveler_result)) {
+        printf("Traveler %d: no path found\n", i);
+        free_dijkstra_result(traveler_result);
+        continue;
+    }
+
+    printf("Traveler %d path length: %d\n", i, travelers[i].path_length);
+
+    free_dijkstra_result(traveler_result);
+    }
+
+    result = dijkstra(
+    graph,
+    travelers[0].source,
+    travelers[0].destination
+    );
 
     path = build_path(result);
     if (path.length == 0) {
@@ -211,9 +251,9 @@ int main(void) {
             printf(" -> ");
         }
     }
-    printf("\nTotal cost: %d\n", result->dist[end]);
+    printf("\nTotal cost: %d\n", result->dist[travelers[0].destination]);
 
-    full_route = build_full_route(graph, start);
+    full_route = build_full_route(graph, travelers[0].source);
     if (full_route.length > 1) {
         free_path(&path);
         path = full_route;
