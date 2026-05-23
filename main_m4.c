@@ -3,6 +3,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <signal.h>
 
 #include "dijkstra.h"
 #include "graph.h"
@@ -178,6 +179,9 @@ int main(void) {
     int traveler_count = 0;
     int running = 1;
     int segment = 0;
+    int* traveler_segments = NULL;
+    float* traveler_progress = NULL;
+    int* traveler_arrived = NULL;
     int is_playing = 0;
     int arrived = 0;
     int is_waiting = 0;
@@ -272,6 +276,21 @@ int main(void) {
 
     positions = build_layout(graph->num_vertices);
     traveler_positions = (Point*)malloc((size_t)traveler_count * sizeof(Point));
+    traveler_segments = (int*)calloc((size_t)traveler_count, sizeof(int));
+    traveler_progress = (float*)calloc((size_t)traveler_count, sizeof(float));
+    traveler_arrived = (int*)calloc((size_t)traveler_count, sizeof(int));
+
+    if (traveler_segments == NULL ||
+        traveler_progress == NULL ||
+        traveler_arrived == NULL) {
+
+        free(traveler_positions);
+        free(positions);
+        free_traveler_paths(travelers, traveler_count);
+        free(travelers);
+        free_graph(graph);
+        return 1;
+    }
 
     if (traveler_positions == NULL) {
         free(positions);
@@ -308,6 +327,18 @@ int main(void) {
     pacman_y = positions[path.nodes[0]].y;
     food_alive[path.nodes[0]] = 0;
 
+    if (!spawn_travelers(travelers, traveler_count)) {
+    free(traveler_arrived);
+    free(traveler_progress);
+    free(traveler_segments);
+    free(traveler_positions);
+    free(positions);
+    free_traveler_paths(travelers, traveler_count);
+    free(travelers);
+    free_graph(graph);
+    return 1;
+    }
+
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Milestone 2 - Pacman Graph GUI");
     SetTargetFPS(60);
     last_time = GetTime();
@@ -331,62 +362,72 @@ int main(void) {
                 is_waiting = 0;
                 last_time = GetTime();
             }
-        } else if (is_playing == 1 && segment < path.length - 1) {
+        } else if (is_playing == 1) {
             double now = GetTime();
             float dt = (float)(now - last_time);
-            int src_node = path.nodes[segment];
-            int dst = path.nodes[segment + 1];
+            int active_count = 0;
 
-            float sx = positions[src_node].x;
-            float sy = positions[src_node].y;
-            float tx = positions[dst].x;
-            float ty = positions[dst].y;
+            for (int i = 0; i < traveler_count; i++) {
+                if (traveler_arrived[i] == 1 || travelers[i].path_length <= 1) {
+                    continue;
+                }
 
-            float dx = tx - sx;
-            float dy = ty - sy;
-            float dist = sqrtf(dx * dx + dy * dy);
+                if (traveler_segments[i] < travelers[i].path_length - 1) {
+                    int src_node = travelers[i].path[traveler_segments[i]];
+                    int dst = travelers[i].path[traveler_segments[i] + 1];
 
-            int edge_weight = get_edge_weight(graph, src_node, dst);
-            float edge_duration = edge_weight * 0.3f;
+                    float sx = positions[src_node].x;
+                    float sy = positions[src_node].y;
+                    float tx = positions[dst].x;
+                    float ty = positions[dst].y;
 
-            if (edge_duration <= 0.0f) {
-                edge_duration = 0.3f;
+                    float dx = tx - sx;
+                    float dy = ty - sy;
+
+                    int edge_weight = get_edge_weight(graph, src_node, dst);
+                    float edge_duration = edge_weight * 0.3f;
+
+                    if (edge_duration <= 0.0f) {
+                        edge_duration = 0.3f;
+                    }
+
+                    traveler_progress[i] += dt / edge_duration;
+
+                    if (traveler_progress[i] > 1.0f) {
+                        traveler_progress[i] = 1.0f;
+                    }
+
+                    traveler_positions[i].x = sx + dx * traveler_progress[i];
+                    traveler_positions[i].y = sy + dy * traveler_progress[i];
+
+                    if (traveler_progress[i] >= 1.0f) {
+                        traveler_positions[i].x = tx;
+                        traveler_positions[i].y = ty;
+
+                        traveler_segments[i]++;
+                        traveler_progress[i] = 0.0f;
+
+                        if (traveler_segments[i] >= travelers[i].path_length - 1) {
+                            traveler_arrived[i] = 1;
+
+                            if (!travelers[i].finished) {
+                                kill(travelers[i].pid, SIGTERM);
+                                travelers[i].finished = 1;
+                            }
+                        }
+                    }
+
+                    active_count++;
+                } else {
+                    traveler_arrived[i] = 1;
+                }
             }
-
-            edge_progress += dt / edge_duration;
-
-            if (edge_progress > 1.0f) {
-                edge_progress = 1.0f;
-            }
-
-            pacman_x = sx + dx * edge_progress;
-            pacman_y = sy + dy * edge_progress;
-            traveler_positions[0].x = pacman_x;
-            traveler_positions[0].y = pacman_y;
 
             last_time = now;
 
-            if (dist > 0.001f) {
-                pacman_angle_deg = atan2f(dy, dx) * RAD2DEG;
-            }
-
-            if (edge_progress >= 1.0f) {
-                pacman_x = tx;
-                pacman_y = ty;
-                traveler_positions[0].x = pacman_x;
-                traveler_positions[0].y = pacman_y;
-                food_alive[dst] = 0;
-                segment++;
-                edge_progress = 0.0f;
-
-                if (segment >= path.length - 1) {
-                    arrived = 1;
-                    is_playing = 0;
-                    is_waiting = 0;
-                } else {
-                    is_waiting = 1;
-                    wait_start_time = GetTime();
-                }
+            if (active_count == 0) {
+                arrived = 1;
+                is_playing = 0;
             }
         } else {
             last_time = GetTime();
@@ -410,6 +451,9 @@ int main(void) {
     }
 
     CloseWindow();
+
+    terminate_travelers(travelers, traveler_count);
+    wait_for_travelers(travelers, traveler_count);
 
     free(food_alive);
     free(positions);
