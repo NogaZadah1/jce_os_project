@@ -18,4 +18,8 @@ typedef struct {
 int build_path_from_dijkstra(Traveler* traveler, const DijkstraResult* result);
 void free_traveler_paths(Traveler* travelers, int traveler_count);
 
+int spawn_travelers(Traveler* travelers, int traveler_count);
+void terminate_travelers(Traveler* travelers, int traveler_count);
+void wait_for_travelers(Traveler* travelers, int traveler_count);
+
 #endif
