@@ -3,13 +3,13 @@
 
 #include <raylib.h>
 #include "graph.h"
+#include "traveler.h"
 
 #define WINDOW_WIDTH 1220
 #define WINDOW_HEIGHT 860
 #define NODE_RADIUS 24
 #define FOOD_RADIUS 6
 #define PACMAN_RADIUS 14
-#define PACMAN_SPEED 180.0f
 
 typedef struct {
     float x;
@@ -34,7 +34,10 @@ void render_scene(
     float pacman_y,
     float pacman_angle_deg,
     int is_playing,
-    int arrived
+    int arrived,
+    const Traveler* travelers,
+    int traveler_count,
+    const Point* traveler_positions
 );
 
 #endif
