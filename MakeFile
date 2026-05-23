@@ -14,5 +14,8 @@ milestone2:
 milestone3:
 	$(CC) main_sim.c $(COMMON_SRC) -o sim $(RAYLIB_FLAGS)
 
+milestone4:
+	$(CC) main_m4.c $(COMMON_SRC) traveler.c -o sim $(RAYLIB_FLAGS)
+
 clean:
 	rm -f dijkstra sim
