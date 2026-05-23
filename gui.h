@@ -9,7 +9,6 @@
 #define NODE_RADIUS 24
 #define FOOD_RADIUS 6
 #define PACMAN_RADIUS 14
-#define PACMAN_SPEED 180.0f
 
 typedef struct {
     float x;
