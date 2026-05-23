@@ -172,6 +172,7 @@ int main(void) {
     Path path;
     Path full_route;
     Point* positions = NULL;
+    Point* traveler_positions = NULL;
     int* food_alive = NULL;
     Traveler* travelers = NULL;
     int traveler_count = 0;
@@ -270,6 +271,20 @@ int main(void) {
     }
 
     positions = build_layout(graph->num_vertices);
+    traveler_positions = (Point*)malloc((size_t)traveler_count * sizeof(Point));
+
+    if (traveler_positions == NULL) {
+        free(positions);
+        free_traveler_paths(travelers, traveler_count);
+        free(travelers);
+        free_graph(graph);
+        return 1;
+    }
+
+    for (int i = 0; i < traveler_count; i++) {
+        traveler_positions[i] = positions[travelers[i].path[0]];
+    }
+
     if (positions == NULL) {
         free_path(&path);
         free_dijkstra_result(result);
@@ -346,6 +361,8 @@ int main(void) {
 
             pacman_x = sx + dx * edge_progress;
             pacman_y = sy + dy * edge_progress;
+            traveler_positions[0].x = pacman_x;
+            traveler_positions[0].y = pacman_y;
 
             last_time = now;
 
@@ -356,6 +373,8 @@ int main(void) {
             if (edge_progress >= 1.0f) {
                 pacman_x = tx;
                 pacman_y = ty;
+                traveler_positions[0].x = pacman_x;
+                traveler_positions[0].y = pacman_y;
                 food_alive[dst] = 0;
                 segment++;
                 edge_progress = 0.0f;
@@ -373,7 +392,20 @@ int main(void) {
             last_time = GetTime();
         }
 
-     render_scene(graph, positions, &path, food_alive, pacman_x, pacman_y, pacman_angle_deg, is_playing, arrived);
+     render_scene(
+    graph,
+    positions,
+    &path,
+    food_alive,
+    pacman_x,
+    pacman_y,
+    pacman_angle_deg,
+    is_playing,
+    arrived,
+    travelers,
+    traveler_count,
+    traveler_positions
+    );
 
     }
 
