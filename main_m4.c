@@ -167,7 +167,7 @@ static void free_path(Path* path) {
     path->length = 0;
 }
 
-int main(void) {
+int main(int argc, char* argv[]) {
     Graph* graph;
     DijkstraResult* result;
     Path path;
@@ -182,6 +182,8 @@ int main(void) {
     int* traveler_segments = NULL;
     float* traveler_progress = NULL;
     int* traveler_arrived = NULL;
+    int* traveler_waiting = NULL;
+    double* traveler_wait_start = NULL;
     int is_playing = 0;
     int arrived = 0;
     int is_waiting = 0;
@@ -192,15 +194,23 @@ int main(void) {
     float edge_progress = 0.0f;
     double last_time;
 
-    if (!read_simulation_from_file(
-    "input_m4.txt",
-    &graph,
-    &travelers,
-    &traveler_count
-    )) {
-    return 1;
+    const char* input_filename;
+
+    if (argc != 2) {
+        printf("Usage: ./sim <file_name>\n");
+        return 1;
     }
 
+    input_filename = argv[1];
+
+    if (!read_simulation_from_file(
+        input_filename,
+        &graph,
+        &travelers,
+        &traveler_count
+    )) {
+        return 1;
+    }
     printf("Traveler count: %d\n", traveler_count);
 
     for (int i = 0; i < traveler_count; i++) {
@@ -279,12 +289,23 @@ int main(void) {
     traveler_segments = (int*)calloc((size_t)traveler_count, sizeof(int));
     traveler_progress = (float*)calloc((size_t)traveler_count, sizeof(float));
     traveler_arrived = (int*)calloc((size_t)traveler_count, sizeof(int));
+    traveler_waiting = (int*)calloc((size_t)traveler_count, sizeof(int));
+    traveler_wait_start = (double*)calloc((size_t)traveler_count, sizeof(double));
+
 
     if (traveler_segments == NULL ||
         traveler_progress == NULL ||
-        traveler_arrived == NULL) {
+        traveler_arrived == NULL ||
+        traveler_waiting == NULL ||
+        traveler_wait_start == NULL) {
 
+        free(traveler_wait_start);
+        free(traveler_waiting);
+        free(traveler_arrived);
+        free(traveler_progress);
+        free(traveler_segments);
         free(traveler_positions);
+
         free(positions);
         free_traveler_paths(travelers, traveler_count);
         free(travelers);
@@ -328,10 +349,13 @@ int main(void) {
     food_alive[path.nodes[0]] = 0;
 
     if (!spawn_travelers(travelers, traveler_count)) {
-    free(traveler_arrived);
-    free(traveler_progress);
-    free(traveler_segments);
-    free(traveler_positions);
+        free(traveler_wait_start);
+        free(traveler_waiting);
+        free(traveler_arrived);
+        free(traveler_progress);
+        free(traveler_segments);
+        free(traveler_positions);
+
     free(positions);
     free_traveler_paths(travelers, traveler_count);
     free(travelers);
@@ -339,7 +363,7 @@ int main(void) {
     return 1;
     }
 
-    InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Milestone 2 - Pacman Graph GUI");
+    InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Milestone 4 - Multiple Travelers GUI");
     SetTargetFPS(60);
     last_time = GetTime();
 
@@ -369,6 +393,16 @@ int main(void) {
 
             for (int i = 0; i < traveler_count; i++) {
                 if (traveler_arrived[i] == 1 || travelers[i].path_length <= 1) {
+                    continue;
+                }
+
+                if (traveler_waiting[i] == 1) {
+                    active_count++;
+
+                    if (GetTime() - traveler_wait_start[i] >= 1.0) {
+                        traveler_waiting[i] = 0;
+                    }
+
                     continue;
                 }
 
@@ -414,9 +448,11 @@ int main(void) {
                                 kill(travelers[i].pid, SIGTERM);
                                 travelers[i].finished = 1;
                             }
+                        } else {
+                            traveler_waiting[i] = 1;
+                            traveler_wait_start[i] = GetTime();
                         }
                     }
-
                     active_count++;
                 } else {
                     traveler_arrived[i] = 1;
@@ -457,8 +493,20 @@ int main(void) {
 
     free(food_alive);
     free(positions);
+
+    free(traveler_positions);
+    free(traveler_segments);
+    free(traveler_progress);
+    free(traveler_arrived);
+    free(traveler_waiting);
+    free(traveler_wait_start);
+
     free_path(&path);
     free_dijkstra_result(result);
+
+    free_traveler_paths(travelers, traveler_count);
+    free(travelers);
+
     free_graph(graph);
     return 0;
 }
