@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include "dijkstra.h"
 
+
 typedef struct {
     int source;
     int destination;
@@ -21,5 +22,13 @@ void free_traveler_paths(Traveler* travelers, int traveler_count);
 int spawn_travelers(Traveler* travelers, int traveler_count);
 void terminate_travelers(Traveler* travelers, int traveler_count);
 void wait_for_travelers(Traveler* travelers, int traveler_count);
+
+void run_child_traveler_m5(
+    const Graph* graph,
+    int source,
+    int destination,
+    int write_fd,
+    int traveler_id
+);
 
 #endif
