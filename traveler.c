@@ -1,4 +1,7 @@
+
+#define _POSIX_C_SOURCE 200809L
 #include "traveler.h"
+#include "ipc.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -117,4 +120,73 @@ void wait_for_travelers(Traveler* travelers, int traveler_count) {
             waitpid(travelers[i].pid, NULL, 0);
         }
     }
+}
+
+void run_child_traveler_m5(
+    const Graph* graph,
+    int source,
+    int destination,
+    int write_fd,
+    int traveler_id
+) {
+    DijkstraResult* result;
+    Traveler traveler;
+    IpcMessage message;
+    int i;
+
+    traveler.source = source;
+    traveler.destination = destination;
+    traveler.path = NULL;
+    traveler.path_length = 0;
+    traveler.pid = getpid();
+    traveler.finished = 0;
+
+    result = dijkstra(graph, source, destination);
+
+    if (result == NULL) {
+        close(write_fd);
+        exit(1);
+    }
+
+    if (!build_path_from_dijkstra(&traveler, result)) {
+        free_dijkstra_result(result);
+        close(write_fd);
+        exit(1);
+    }
+    for (i = 0; i < traveler.path_length; i++) {
+        message.type = IPC_MSG_ARRIVED;
+        message.pid = getpid();
+        message.traveler_id = traveler_id;
+        message.current_node = traveler.path[i];
+
+        if (i + 1 < traveler.path_length) {
+            message.next_node = traveler.path[i + 1];
+        } else {
+            message.next_node = IPC_DESTINATION_NODE;
+        }
+
+        if (ipc_send_message(write_fd, &message) != 0) {
+            free(traveler.path);
+            free_dijkstra_result(result);
+            close(write_fd);
+            exit(1);
+        }
+    }
+    message.type = IPC_MSG_FINISHED;
+    message.pid = getpid();
+    message.traveler_id = traveler_id;
+    message.current_node = destination;
+    message.next_node = IPC_DESTINATION_NODE;
+
+    if (ipc_send_message(write_fd, &message) != 0) {
+        free(traveler.path);
+        free_dijkstra_result(result);
+        close(write_fd);
+        exit(1);
+    }
+
+    free(traveler.path);
+    free_dijkstra_result(result);
+    close(write_fd);
+    exit(0);
 }
