@@ -96,7 +96,7 @@ static void draw_ghost_node(Vector2 p, float size, Color body_color, int node_id
     );
 }
 
-static void draw_pacman(Vector2 p, float radius, float angle_deg) {
+static void draw_pacman(Vector2 p, float radius, float angle_deg, Color body_color, Color outline_color) {
     float mouth = 36.0f;
     float eye_angle = angle_deg - 40.0f;
 
@@ -105,8 +105,8 @@ static void draw_pacman(Vector2 p, float radius, float angle_deg) {
         p.y + sinf(eye_angle * DEG2RAD) * radius * 0.35f
     };
 
-    DrawCircleSector(p, radius, angle_deg + mouth, angle_deg + (360.0f - mouth), 48, YELLOW);
-    DrawCircleSectorLines(p, radius, angle_deg + mouth, angle_deg + (360.0f - mouth), 48, GOLD);
+    DrawCircleSector(p, radius, angle_deg + mouth, angle_deg + (360.0f - mouth), 48, body_color);
+    DrawCircleSectorLines(p, radius, angle_deg + mouth, angle_deg + (360.0f - mouth), 48, outline_color);
     DrawCircleV(eye_pos, radius * 0.12f, BLACK);
 }
 
@@ -263,20 +263,25 @@ void render_scene(
     }
 
     if (traveler_positions != NULL && travelers != NULL && traveler_count > 0) {
-    for (i = 0; i < traveler_count; i++) {
+        for (i = 0; i < traveler_count; i++) {
+            Color traveler_color = ghost_palette[i % palette_count];
+
+            draw_pacman(
+                (Vector2){traveler_positions[i].x, traveler_positions[i].y},
+                (float)PACMAN_RADIUS + 1.5f,
+                0.0f,
+                traveler_color,
+                RAYWHITE
+            );
+        }
+    } else {
         draw_pacman(
-            (Vector2){traveler_positions[i].x, traveler_positions[i].y},
+            (Vector2){pacman_x, pacman_y},
             (float)PACMAN_RADIUS + 1.5f,
-            0.0f
+            pacman_angle_deg,
+            YELLOW,
+            GOLD
         );
     }
-} else {
-    draw_pacman(
-        (Vector2){pacman_x, pacman_y},
-        (float)PACMAN_RADIUS + 1.5f,
-        pacman_angle_deg
-    );
-}
-
     EndDrawing();
 }
