@@ -3,7 +3,6 @@
 
 #include <raylib.h>
 #include "graph.h"
-#include "traveler.h"
 
 #define WINDOW_WIDTH 1220
 #define WINDOW_HEIGHT 860
@@ -34,10 +33,7 @@ void render_scene(
     float pacman_y,
     float pacman_angle_deg,
     int is_playing,
-    int arrived,
-    const Traveler* travelers,
-    int traveler_count,
-    const Point* traveler_positions
+    int arrived
 );
 
 #endif
