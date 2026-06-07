@@ -290,9 +290,3 @@ Message fields:
 * Milestone 5 uses pipes for IPC
 
 ````
-
-אחרי הדבקה ושמירה, תריץ:
-
-```bash
-git diff README.md
-````
