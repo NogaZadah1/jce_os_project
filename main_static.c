@@ -223,10 +223,12 @@ static void render_scene(const Graph* graph, const Point* positions, const Path*
     EndDrawing();
 }
 
-int main(void) {
-    int start, end;
-    // Load the graph structure from the input file
-    Graph* graph = read_graph_from_file("input.txt", &start, &end);
+int main(int argc, char* argv[]) {
+    if (argc != 2) {
+    fprintf(stderr, "Usage: %s <file_name>\n", argv[0]);
+    return 1;
+    }
+    Graph* graph = read_graph_from_file(argv[1], &start, &end);
     if (graph == NULL) return 1;
 
     // Calculate the shortest path using Dijkstra's algorithm

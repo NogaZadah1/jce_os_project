@@ -165,7 +165,7 @@ static void free_path(Path* path) {
     path->length = 0;
 }
 
-int main(void) {
+int main(int argc, char* argv[]) {
     Graph* graph;
     DijkstraResult* result;
     Path path;
@@ -185,7 +185,12 @@ int main(void) {
     float edge_progress = 0.0f;
     double last_time;
 
-    graph = read_graph_from_file("input.txt", &start, &end);
+    if (argc != 2) {
+    fprintf(stderr, "Usage: %s <file_name>\n", argv[0]);
+    return 1;
+    }
+
+    graph = read_graph_from_file(argv[1], &start, &end);
     if (graph == NULL) {
         return 1;
     }
