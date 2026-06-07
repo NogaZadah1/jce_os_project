@@ -3,6 +3,10 @@
 #include <math.h>
 #include <stdlib.h>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 static void draw_edge_weight(int x, int y, int weight) {
     const int badge_r = 18;
     const char* text = TextFormat("%d", weight);
@@ -30,10 +34,16 @@ static void draw_arrow(Vector2 from, Vector2 to, Color color) {
         float ux = dx / len;
         float uy = dy / len;
 
-        Vector2 tip = { from.x + dx * 0.75f, from.y + dy * 0.75f };
+        /*
+         * Put the arrow close to the destination, but not directly on the node.
+         */
+        Vector2 tip = {
+            from.x + dx * 0.78f,
+            from.y + dy * 0.78f
+        };
 
-        float arrow_len = 22.0f;
-        float arrow_width = 14.0f;
+        float arrow_len = 18.0f;
+        float arrow_width = 10.0f;
 
         Vector2 left = {
             tip.x - ux * arrow_len + uy * arrow_width,
@@ -46,7 +56,6 @@ static void draw_arrow(Vector2 from, Vector2 to, Color color) {
         };
 
         DrawTriangle(tip, left, right, color);
-        DrawTriangle(tip, right, left, color);
     }
 }
 
@@ -63,8 +72,13 @@ static void draw_ghost_node(Vector2 p, float size, Color body_color, int node_id
     int font_size = (int)(size * 0.65f);
     int id_w;
 
-    if (font_size < 18) font_size = 18;
-    if (font_size > 26) font_size = 26;
+    if (font_size < 18) {
+        font_size = 18;
+    }
+
+    if (font_size > 26) {
+        font_size = 26;
+    }
 
     id_w = MeasureText(id_text, font_size);
 
@@ -96,7 +110,13 @@ static void draw_ghost_node(Vector2 p, float size, Color body_color, int node_id
     );
 }
 
-static void draw_pacman(Vector2 p, float radius, float angle_deg, Color body_color, Color outline_color) {
+static void draw_pacman(
+    Vector2 p,
+    float radius,
+    float angle_deg,
+    Color body_color,
+    Color outline_color
+) {
     float mouth = 36.0f;
     float eye_angle = angle_deg - 40.0f;
 
@@ -105,9 +125,53 @@ static void draw_pacman(Vector2 p, float radius, float angle_deg, Color body_col
         p.y + sinf(eye_angle * DEG2RAD) * radius * 0.35f
     };
 
-    DrawCircleSector(p, radius, angle_deg + mouth, angle_deg + (360.0f - mouth), 48, body_color);
-    DrawCircleSectorLines(p, radius, angle_deg + mouth, angle_deg + (360.0f - mouth), 48, outline_color);
+    DrawCircleSector(
+        p,
+        radius,
+        angle_deg + mouth,
+        angle_deg + (360.0f - mouth),
+        48,
+        body_color
+    );
+
+    DrawCircleSectorLines(
+        p,
+        radius,
+        angle_deg + mouth,
+        angle_deg + (360.0f - mouth),
+        48,
+        outline_color
+    );
+
     DrawCircleV(eye_pos, radius * 0.12f, BLACK);
+}
+
+/*
+ * Used for Milestone 5 multi-traveler view.
+ * We draw travelers as colored markers instead of pacman,
+ * so we do not need a direction angle for each traveler.
+ * This keeps Milestone 3 pacman logic unchanged.
+ */
+static void draw_traveler_marker(
+    Vector2 p,
+    float radius,
+    Color color,
+    int traveler_id
+) {
+    const char* text = TextFormat("%d", traveler_id);
+    int text_w = MeasureText(text, 16);
+
+    DrawCircleV(p, radius + 2.0f, RAYWHITE);
+    DrawCircleV(p, radius, color);
+    DrawCircleLines((int)p.x, (int)p.y, radius, (Color){15, 22, 45, 255});
+
+    DrawText(
+        text,
+        (int)(p.x - text_w / 2.0f),
+        (int)(p.y - 8.0f),
+        16,
+        (Color){15, 22, 45, 255}
+    );
 }
 
 Point* build_layout(int n) {
@@ -165,9 +229,7 @@ void render_scene(
     const Traveler* travelers,
     int traveler_count,
     const Point* traveler_positions
-) 
-{
-
+) {
     int i;
     Edge* edge;
 
@@ -185,6 +247,9 @@ void render_scene(
     BeginDrawing();
     ClearBackground((Color){9, 13, 30, 255});
 
+    /*
+     * Draw all graph edges with direction arrows and weights.
+     */
     for (i = 0; i < graph->num_vertices; i++) {
         edge = graph->adj_lists[i];
 
@@ -201,12 +266,15 @@ void render_scene(
             float wx;
             float wy;
 
+            Color edge_color = (Color){90, 110, 170, 255};
+
             if (len > 0.001f) {
                 nx = -dy / len;
                 ny = dx / len;
             }
 
-            DrawLineEx(a, b, 2.0f, (Color){90, 110, 170, 255});
+            DrawLineEx(a, b, 2.0f, edge_color);
+            draw_arrow(a, b, edge_color);
 
             wx = (a.x + b.x) * 0.5f + nx * 22.0f * side;
             wy = (a.y + b.y) * 0.5f + ny * 22.0f * side;
@@ -217,7 +285,11 @@ void render_scene(
         }
     }
 
-    if (path->length >= 2) {
+    /*
+     * Highlight the single path used by earlier milestones.
+     * Milestone 5 passes an empty path, so this does not affect it.
+     */
+    if (path != NULL && path->length >= 2) {
         for (i = 0; i < path->length - 1; i++) {
             int a = path->nodes[i];
             int b = path->nodes[i + 1];
@@ -232,6 +304,9 @@ void render_scene(
         }
     }
 
+    /*
+     * Draw graph nodes.
+     */
     for (i = 0; i < graph->num_vertices; i++) {
         Color node_color = ghost_palette[i % palette_count];
 
@@ -245,12 +320,17 @@ void render_scene(
 
     (void)food_alive;
 
-    Rectangle play_button = {30, 30, 130, 45};
-    const char* button_text = is_playing ? "Stop" : "Play";
+    /*
+     * Draw play/stop button used by earlier animation milestones.
+     */
+    {
+        Rectangle play_button = {30, 30, 130, 45};
+        const char* button_text = is_playing ? "Stop" : "Play";
 
-    DrawRectangleRounded(play_button, 0.25f, 8, (Color){30, 90, 150, 255});
-    DrawRectangleRoundedLines(play_button, 0.25f, 8, (Color){255, 255, 255, 255});
-    DrawText(button_text, (int)(play_button.x + 35), (int)(play_button.y + 12), 22, RAYWHITE);
+        DrawRectangleRounded(play_button, 0.25f, 8, (Color){30, 90, 150, 255});
+        DrawRectangleRoundedLines(play_button, 0.25f, 8, (Color){255, 255, 255, 255});
+        DrawText(button_text, (int)(play_button.x + 35), (int)(play_button.y + 12), 22, RAYWHITE);
+    }
 
     if (arrived == 1) {
         DrawText(
@@ -262,16 +342,22 @@ void render_scene(
         );
     }
 
+    /*
+     * Milestone 5:
+     * draw multiple travelers as colored markers.
+     *
+     * Earlier milestones:
+     * draw the original pacman using pacman_angle_deg.
+     */
     if (traveler_positions != NULL && travelers != NULL && traveler_count > 0) {
         for (i = 0; i < traveler_count; i++) {
             Color traveler_color = ghost_palette[i % palette_count];
 
-            draw_pacman(
+            draw_traveler_marker(
                 (Vector2){traveler_positions[i].x, traveler_positions[i].y},
-                (float)PACMAN_RADIUS + 1.5f,
-                0.0f,
+                (float)PACMAN_RADIUS + 2.0f,
                 traveler_color,
-                RAYWHITE
+                i
             );
         }
     } else {
@@ -283,5 +369,6 @@ void render_scene(
             GOLD
         );
     }
+
     EndDrawing();
 }
