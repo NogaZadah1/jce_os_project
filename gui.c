@@ -161,7 +161,10 @@ void render_scene(
     float pacman_y,
     float pacman_angle_deg,
     int is_playing,
-    int arrived
+    int arrived,
+    const Traveler* travelers,
+    int traveler_count,
+    const Point* traveler_positions
 ) 
 {
 
@@ -259,11 +262,21 @@ void render_scene(
         );
     }
 
+    if (traveler_positions != NULL && travelers != NULL && traveler_count > 0) {
+    for (i = 0; i < traveler_count; i++) {
+        draw_pacman(
+            (Vector2){traveler_positions[i].x, traveler_positions[i].y},
+            (float)PACMAN_RADIUS + 1.5f,
+            0.0f
+        );
+    }
+} else {
     draw_pacman(
-    (Vector2){pacman_x, pacman_y},
-    (float)PACMAN_RADIUS + 1.5f,
-    pacman_angle_deg
-);
+        (Vector2){pacman_x, pacman_y},
+        (float)PACMAN_RADIUS + 1.5f,
+        pacman_angle_deg
+    );
+}
 
     EndDrawing();
 }
