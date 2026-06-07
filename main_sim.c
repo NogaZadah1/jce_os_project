@@ -333,7 +333,7 @@ int main(void) {
             last_time = GetTime();
         }
 
-     render_scene(graph, positions, &path, food_alive, pacman_x, pacman_y, pacman_angle_deg, is_playing, arrived);
+     render_scene(graph, positions, &path, food_alive, pacman_x, pacman_y, pacman_angle_deg, is_playing, arrived, NULL, 0, NULL);
 
     }
 

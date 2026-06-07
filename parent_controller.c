@@ -13,6 +13,7 @@
 #include "graph.h"
 #include "traveler.h"
 #include "ipc.h"
+#include "m5_gui_adapter.h"
 
 static void print_ipc_message(const IpcMessage* message) {
     if (message == NULL) {
@@ -122,8 +123,6 @@ static int create_children(
          */
         close(pipes[i][1]);
         pipes[i][1] = -1;
-
-        
     }
 
     return 1;
@@ -142,17 +141,32 @@ static void wait_for_all_children(Traveler* travelers, int traveler_count) {
 static int read_messages_from_children(
     Traveler* travelers,
     int traveler_count,
-    int (*pipes)[2]
+    int (*pipes)[2],
+    const Graph* graph,
+    const Point* node_positions,
+    Point* traveler_positions
 ) {
     int finished_count;
     int i;
 
     finished_count = 0;
 
-    while (finished_count < traveler_count) {
+    /*
+     * Draw the initial frame before receiving messages.
+     */
+    m5_gui_render_frame(
+        graph,
+        node_positions,
+        travelers,
+        traveler_count,
+        traveler_positions
+    );
+
+    while (finished_count < traveler_count && !WindowShouldClose()) {
         fd_set read_set;
         int max_fd;
         int ready_count;
+        struct timeval timeout;
 
         FD_ZERO(&read_set);
         max_fd = -1;
@@ -171,11 +185,33 @@ static int read_messages_from_children(
             break;
         }
 
-        ready_count = select(max_fd + 1, &read_set, NULL, NULL, NULL);
+        /*
+         * Short timeout so the GUI stays responsive.
+         * Without this, select may block and the window will not render smoothly.
+         */
+        timeout.tv_sec = 0;
+        timeout.tv_usec = 16000; /* about 60 FPS */
+
+        ready_count = select(max_fd + 1, &read_set, NULL, NULL, &timeout);
 
         if (ready_count < 0) {
             perror("select");
             return 0;
+        }
+
+        /*
+         * No IPC message arrived in this frame.
+         * Render anyway so the window stays open and responsive.
+         */
+        if (ready_count == 0) {
+            m5_gui_render_frame(
+                graph,
+                node_positions,
+                travelers,
+                traveler_count,
+                traveler_positions
+            );
+            continue;
         }
 
         for (i = 0; i < traveler_count; i++) {
@@ -205,7 +241,6 @@ static int read_messages_from_children(
                 if (read_result == 0) {
                     /*
                      * Pipe closed.
-                     * This can happen if the child exits without sending FINISHED.
                      */
                     travelers[i].finished = 1;
                     finished_count++;
@@ -218,6 +253,14 @@ static int read_messages_from_children(
 
                 print_ipc_message(&message);
 
+                if (message.type == IPC_MSG_ARRIVED) {
+                    m5_gui_apply_arrival(
+                        &message,
+                        node_positions,
+                        traveler_positions
+                    );
+                }
+
                 if (message.type == IPC_MSG_FINISHED ||
                     message.type == IPC_MSG_ERROR) {
                     travelers[i].finished = 1;
@@ -226,8 +269,30 @@ static int read_messages_from_children(
                     close(pipes[i][0]);
                     pipes[i][0] = -1;
                 }
+
+                m5_gui_render_frame(
+                    graph,
+                    node_positions,
+                    travelers,
+                    traveler_count,
+                    traveler_positions
+                );
             }
         }
+    }
+
+    /*
+     * Keep the final frame on screen after all travelers finish.
+     * The window will close only when the user closes it manually.
+     */
+    while (!WindowShouldClose()) {
+        m5_gui_render_frame(
+            graph,
+            node_positions,
+            travelers,
+            traveler_count,
+            traveler_positions
+        );
     }
 
     return 1;
@@ -238,6 +303,8 @@ int run_milestone5(const char* input_file) {
     Traveler* travelers;
     int traveler_count;
     int (*pipes)[2];
+    Point* node_positions;
+    Point* traveler_positions;
     int i;
     int success;
 
@@ -245,6 +312,8 @@ int run_milestone5(const char* input_file) {
     travelers = NULL;
     traveler_count = 0;
     pipes = NULL;
+    node_positions = NULL;
+    traveler_positions = NULL;
     success = 1;
 
     if (input_file == NULL) {
@@ -277,17 +346,36 @@ int run_milestone5(const char* input_file) {
         travelers[i].pid = -1;
     }
 
+    if (!m5_gui_init_state(
+            graph,
+            travelers,
+            traveler_count,
+            &node_positions,
+            &traveler_positions)) {
+        fprintf(stderr, "Error: failed to initialize milestone 5 GUI state\n");
+        cleanup_resources(graph, travelers, pipes, traveler_count);
+        return 1;
+    }
+
     if (!create_children(graph, travelers, traveler_count, pipes)) {
         success = 0;
     }
 
     if (success) {
-        if (!read_messages_from_children(travelers, traveler_count, pipes)) {
+        if (!read_messages_from_children(
+                travelers,
+                traveler_count,
+                pipes,
+                graph,
+                node_positions,
+                traveler_positions)) {
             success = 0;
         }
     }
 
     wait_for_all_children(travelers, traveler_count);
+
+    m5_gui_free_state(node_positions, traveler_positions);
 
     cleanup_resources(graph, travelers, pipes, traveler_count);
 
