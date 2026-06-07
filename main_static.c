@@ -225,8 +225,8 @@ static void render_scene(const Graph* graph, const Point* positions, const Path*
 
 int main(int argc, char* argv[]) {
     int start;
-    int end;ֿ
-    
+    int end;
+
     if (argc != 2) {
     fprintf(stderr, "Usage: %s <file_name>\n", argv[0]);
     return 1;
