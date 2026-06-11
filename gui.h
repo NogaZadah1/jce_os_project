@@ -37,7 +37,8 @@ void render_scene(
     int arrived,
     const Traveler* travelers,
     int traveler_count,
-    const Point* traveler_positions
+    const Point* traveler_positions,
+    const int* traveler_waiting_flags
 );
 
 #endif

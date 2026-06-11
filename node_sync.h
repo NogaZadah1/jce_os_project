@@ -31,6 +31,12 @@ NodeSync* node_sync_create(int node_count);
 int node_sync_enter(NodeSync* sync, int node_id);
 
 /*
+ * Tries to lock a node without blocking.
+ * Returns 0 if entered, 1 if the node is busy, -1 on failure.
+ */
+int node_sync_try_enter(NodeSync* sync, int node_id);
+
+/*
  * Releases a node after the traveler leaves it.
  *
  * Returns 0 on success, -1 on failure.

@@ -26,7 +26,7 @@ Clean compiled files:
 
 ```bash
 make clean
-````
+```
 
 ### Milestone 1 - Dijkstra CLI
 
@@ -75,6 +75,19 @@ Example:
 ./sim input_milestone5.txt
 ```
 
+### Milestone 6 - Node Synchronization
+
+```bash
+make milestone6
+./sim <file_name>
+```
+
+Example:
+
+```bash
+./sim input_milestone6_waiting.txt
+```
+
 ---
 
 ## Milestone Summary
@@ -121,6 +134,18 @@ The parent process receives IPC messages from all children, prints the required 
 
 In this milestone, all terminal output is produced by the parent process only.
 
+### Milestone 6 - Node Synchronization
+
+Milestone 6 adds synchronization for access to graph nodes.
+
+Each graph node is protected by a POSIX named semaphore created in `node_sync.c`. The semaphore value is initialized to `1`, which means that at most one traveler process can be inside a node at any given time. The one-second stay inside a node is treated as the critical section.
+
+Each traveler first calls `node_sync_try_enter()` when it reaches a node. If the node is free, the traveler enters immediately, sleeps for one second inside the node, calls `node_sync_leave()`, and then sends `IPC_MSG_ARRIVED` to the parent.
+
+If the node is already occupied, the traveler sends `IPC_MSG_WAITING` to the parent and then blocks on `node_sync_enter()` until the semaphore becomes available. The parent uses the `WAITING` message to display the traveler outside the node in the GUI with a different visual state. After the traveler enters, waits one second, and leaves the node, it sends `IPC_MSG_ARRIVED` as usual.
+
+This design keeps the child processes autonomous while enforcing mutual exclusion for every node. The shared `node_occupancy` array in `NodeSync` is used as a runtime validation check and must never become greater than `1` for any node.
+
 ---
 
 ## Input Formats
@@ -161,7 +186,7 @@ Example output:
 
 ### Extended Travelers Input Format
 
-Used by milestones 4-5:
+Used by milestones 4-6:
 
 ```text
 N M
@@ -215,6 +240,7 @@ Defined in `ipc.h`:
 ```c
 typedef enum {
     IPC_MSG_ARRIVED,
+    IPC_MSG_WAITING,
     IPC_MSG_FINISHED,
     IPC_MSG_ERROR
 } IpcMessageType;
@@ -232,7 +258,7 @@ Message fields:
 
 | Field          | Meaning                                      |
 | -------------- | -------------------------------------------- |
-| `type`         | Message type: arrived, finished, or error    |
+| `type`         | Message type: arrived, waiting, finished, or error |
 | `pid`          | Child process ID                             |
 | `traveler_id`  | Traveler index in the travelers array        |
 | `current_node` | Node reached by the traveler                 |
@@ -266,16 +292,18 @@ Message fields:
 | `gui.c`, `gui.h`                             | Shared Raylib drawing and rendering functions              |
 | `traveler.c`, `traveler.h`                   | Traveler data, child process logic, and traveler utilities |
 | `ipc.c`, `ipc.h`                             | IPC message structure and pipe send/read helpers           |
-| `parent_controller.c`, `parent_controller.h` | Parent process logic for milestone 5                       |
-| `m5_gui_adapter.c`, `m5_gui_adapter.h`       | Adapter between IPC state updates and GUI rendering        |
+| `parent_controller.c`, `parent_controller.h` | Parent process logic for milestones 5-6                    |
+| `m5_gui_adapter.c`, `m5_gui_adapter.h`       | Adapter between IPC state updates and GUI rendering, including waiting visualization |
 | `main_dijkstra.c`                            | Entry point for milestone 1                                |
 | `main_static.c`                              | Entry point for milestone 2                                |
 | `main_sim.c`                                 | Entry point for milestone 3                                |
 | `main_m4.c`                                  | Entry point for milestone 4                                |
 | `main_m5.c`                                  | Entry point for milestone 5                                |
+| `main_m6.c`                                  | Entry point for milestone 6                                |
 | `input.txt`                                  | Example input for milestones 1-3                           |
 | `input_m4.txt`                               | Example input for milestone 4                              |
 | `input_milestone5.txt`                       | Example input for milestone 5                              |
+| `input_milestone6_waiting.txt`                | Example input for milestone 6 waiting scenario             |
 | `Makefile`                                   | Build targets for all milestones                           |
 
 ---
@@ -288,5 +316,6 @@ Message fields:
 * Shortest paths are calculated with Dijkstra's algorithm
 * Milestone 4 uses multiple child processes
 * Milestone 5 uses pipes for IPC
+* Milestone 6 uses POSIX named semaphores for node synchronization
 
 ````
