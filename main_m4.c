@@ -481,7 +481,8 @@ int main(int argc, char* argv[]) {
     arrived,
     travelers,
     traveler_count,
-    traveler_positions
+    traveler_positions,
+    NULL
     );
 
     }
