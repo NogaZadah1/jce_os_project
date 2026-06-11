@@ -164,7 +164,12 @@ static void draw_traveler_marker(
     Color marker_color = color;
 
     if (is_waiting) {
-        marker_color = ORANGE;
+        marker_color = RAYWHITE;
+    }
+
+    if (is_waiting) {
+        DrawCircleV(p, radius + 7.0f, RED);
+        DrawCircleV(p, radius + 4.0f, ORANGE);
     }
 
     DrawCircleV(p, radius + 2.0f, RAYWHITE);

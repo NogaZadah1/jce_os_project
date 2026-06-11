@@ -241,6 +241,18 @@ static int read_messages_from_children(
         int ready_count;
         struct timeval timeout;
 
+        m5_gui_render_frame(
+            graph,
+            node_positions,
+            travelers,
+            traveler_count,
+            traveler_positions
+        );
+
+        if (!m5_gui_is_playing()) {
+            continue;
+        }
+
         FD_ZERO(&read_set);
         max_fd = -1;
 
@@ -361,6 +373,8 @@ static int read_messages_from_children(
             }
         }
     }
+
+    m5_gui_set_all_arrived(1);
 
     /*
      * Keep the final frame on screen after all travelers finish.
