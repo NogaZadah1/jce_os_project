@@ -156,13 +156,19 @@ static void draw_traveler_marker(
     Vector2 p,
     float radius,
     Color color,
-    int traveler_id
+    int traveler_id,
+    int is_waiting
 ) {
     const char* text = TextFormat("%d", traveler_id);
     int text_w = MeasureText(text, 16);
+    Color marker_color = color;
+
+    if (is_waiting) {
+        marker_color = ORANGE;
+    }
 
     DrawCircleV(p, radius + 2.0f, RAYWHITE);
-    DrawCircleV(p, radius, color);
+    DrawCircleV(p, radius, marker_color);
     DrawCircleLines((int)p.x, (int)p.y, radius, (Color){15, 22, 45, 255});
 
     DrawText(
@@ -172,6 +178,16 @@ static void draw_traveler_marker(
         16,
         (Color){15, 22, 45, 255}
     );
+
+    if (is_waiting) {
+        DrawText(
+            "WAIT",
+            (int)(p.x - 18.0f),
+            (int)(p.y - radius - 20.0f),
+            12,
+            RAYWHITE
+        );
+    }
 }
 
 Point* build_layout(int n) {
@@ -228,7 +244,8 @@ void render_scene(
     int arrived,
     const Traveler* travelers,
     int traveler_count,
-    const Point* traveler_positions
+    const Point* traveler_positions,
+    const int* traveler_waiting_flags
 ) {
     int i;
     Edge* edge;
@@ -357,7 +374,8 @@ void render_scene(
                 (Vector2){traveler_positions[i].x, traveler_positions[i].y},
                 (float)PACMAN_RADIUS + 2.0f,
                 traveler_color,
-                i
+                i,
+                traveler_waiting_flags != NULL ? traveler_waiting_flags[i] : 0
             );
         }
     } else {

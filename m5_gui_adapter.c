@@ -19,6 +19,9 @@ typedef struct {
     int is_moving;
     int is_waiting;
 
+    int is_blocked_waiting;
+    int waiting_node;
+
     Point start_position;
     Point target_position;
 
@@ -29,6 +32,7 @@ typedef struct {
 
 static M5TravelerVisualState* g_visual_states = NULL;
 static int g_traveler_count = 0;
+static int g_m5_is_playing = 1;
 static const Graph* g_graph = NULL;
 
 static int queue_push(M5TravelerVisualState* state, int node) {
@@ -61,6 +65,20 @@ static int queue_pop(M5TravelerVisualState* state, int* node) {
     state->queue_count--;
 
     return 1;
+}
+
+/*
+ * Handles the Play/Stop button for milestone 5/6 animation.
+ * The button itself is drawn by render_scene.
+ * This adapter only controls whether traveler animations advance.
+ */
+static void update_play_button_state(void) {
+    Rectangle play_button = {30, 30, 130, 45};
+
+    if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) &&
+        CheckCollisionPointRec(GetMousePosition(), play_button)) {
+        g_m5_is_playing = !g_m5_is_playing;
+    }
 }
 
 static int get_edge_weight_for_animation(
@@ -116,7 +134,7 @@ static void start_next_move_if_needed(
         return;
     }
 
-    if (state->is_moving || state->is_waiting) {
+    if (state->is_blocked_waiting || state->is_moving || state->is_waiting) {
         return;
     }
 
@@ -340,6 +358,8 @@ int m5_gui_init_state(
 
         g_visual_states[i].is_moving = 0;
         g_visual_states[i].is_waiting = 0;
+        g_visual_states[i].is_blocked_waiting = 0;
+        g_visual_states[i].waiting_node = -1;
 
         g_visual_states[i].start_position = (*traveler_positions)[i];
         g_visual_states[i].target_position = (*traveler_positions)[i];
@@ -359,9 +379,6 @@ void m5_gui_apply_arrival(
 ) {
     M5TravelerVisualState* state;
 
-    (void)node_positions;
-    (void)traveler_positions;
-
     if (message == NULL) {
         return;
     }
@@ -380,6 +397,19 @@ void m5_gui_apply_arrival(
 
     state = &g_visual_states[message->traveler_id];
 
+    if (state->is_blocked_waiting &&
+        node_positions != NULL &&
+        traveler_positions != NULL &&
+        message->current_node >= 0) {
+        traveler_positions[message->traveler_id] = node_positions[message->current_node];
+        state->current_node = message->current_node;
+        state->target_node = -1;
+        state->is_moving = 0;
+        state->is_waiting = 0;
+        state->is_blocked_waiting = 0;
+        state->waiting_node = -1;
+    }
+
     /*
      * The child sends:
      * current_node = node it reached
@@ -394,6 +424,60 @@ void m5_gui_apply_arrival(
     }
 }
 
+
+void m5_gui_apply_waiting(
+    const IpcMessage* message,
+    const Point* node_positions,
+    Point* traveler_positions
+) {
+    M5TravelerVisualState* state;
+    float offset_x;
+    float offset_y;
+    int traveler_id;
+    int waiting_node;
+
+    if (message == NULL || node_positions == NULL || traveler_positions == NULL) {
+        return;
+    }
+
+    if (message->type != IPC_MSG_WAITING) {
+        return;
+    }
+
+    if (g_visual_states == NULL) {
+        return;
+    }
+
+    traveler_id = message->traveler_id;
+    waiting_node = message->current_node;
+
+    if (traveler_id < 0 || traveler_id >= g_traveler_count) {
+        return;
+    }
+
+    if (waiting_node < 0) {
+        return;
+    }
+
+    state = &g_visual_states[traveler_id];
+
+    /*
+     * Show the traveler slightly outside the occupied node.
+     * Different offsets make several waiting travelers visible at once.
+     */
+    offset_x = 34.0f + (float)(traveler_id % 3) * 14.0f;
+    offset_y = 34.0f + (float)(traveler_id / 3) * 14.0f;
+
+    traveler_positions[traveler_id].x = node_positions[waiting_node].x + offset_x;
+    traveler_positions[traveler_id].y = node_positions[waiting_node].y + offset_y;
+
+    state->is_blocked_waiting = 1;
+    state->waiting_node = waiting_node;
+    state->is_moving = 0;
+    state->is_waiting = 0;
+    state->target_node = waiting_node;
+}
+
 void m5_gui_render_frame(
     const Graph* graph,
     const Point* node_positions,
@@ -403,6 +487,7 @@ void m5_gui_render_frame(
 ) {
     Path empty_path;
     int* food_alive;
+    int* traveler_waiting_flags;
     int i;
     Point* mutable_traveler_positions;
 
@@ -414,6 +499,7 @@ void m5_gui_render_frame(
     if (!IsWindowReady()) {
         return;
     }
+        update_play_button_state();
 
     /*
      * The function receives const traveler_positions because render_scene
@@ -422,10 +508,12 @@ void m5_gui_render_frame(
      */
     mutable_traveler_positions = (Point*)traveler_positions;
 
-    update_all_traveler_animations(
-        node_positions,
-        mutable_traveler_positions
-    );
+        if (g_m5_is_playing) {
+        update_all_traveler_animations(
+            node_positions,
+            mutable_traveler_positions
+        );
+    }
 
     empty_path.nodes = NULL;
     empty_path.length = 0;
@@ -436,8 +524,22 @@ void m5_gui_render_frame(
         return;
     }
 
+    traveler_waiting_flags = malloc((size_t)traveler_count * sizeof(int));
+    if (traveler_waiting_flags == NULL) {
+        fprintf(stderr, "Error: failed to allocate waiting state\n");
+        free(food_alive);
+        return;
+    }
+
     for (i = 0; i < graph->num_vertices; i++) {
         food_alive[i] = 1;
+    }
+
+    for (i = 0; i < traveler_count; i++) {
+        traveler_waiting_flags[i] = 0;
+        if (g_visual_states != NULL && i < g_traveler_count) {
+            traveler_waiting_flags[i] = g_visual_states[i].is_blocked_waiting;
+        }
     }
 
     render_scene(
@@ -448,13 +550,15 @@ void m5_gui_render_frame(
         0.0f,
         0.0f,
         0.0f,
-        1,
+        g_m5_is_playing,
         0,
         travelers,
         traveler_count,
-        mutable_traveler_positions
+        mutable_traveler_positions,
+        traveler_waiting_flags
     );
 
+    free(traveler_waiting_flags);
     free(food_alive);
 }
 
@@ -475,6 +579,7 @@ void m5_gui_free_state(
     }
 
     g_traveler_count = 0;
+    g_m5_is_playing = 1;
     g_graph = NULL;
 
     free(node_positions);

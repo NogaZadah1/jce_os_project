@@ -193,6 +193,37 @@ int node_sync_enter(NodeSync* sync, int node_id) {
     return 0;
 }
 
+/*
+ * Tries to enter a node without blocking.
+ * If the node is free, the traveler enters it immediately.
+ * If the node is already occupied, the function returns 1 without waiting.
+ *
+ * Returns 0 on success, 1 if the node is busy, -1 on failure.
+ */
+int node_sync_try_enter(NodeSync* sync, int node_id) {
+    if (sync == NULL || node_id < 0 || node_id >= sync->node_count) {
+        return -1;
+    }
+
+    if (sem_trywait(sync->node_semaphores[node_id]) != 0) {
+        if (errno == EAGAIN) {
+            return 1;
+        }
+
+        perror("sem_trywait");
+        return -1;
+    }
+
+    sync->node_occupancy[node_id]++;
+
+    if (sync->node_occupancy[node_id] > 1) {
+        fprintf(stderr, "SYNC ERROR: more than one traveler inside node %d\n", node_id);
+    }
+
+    return 0;
+}
+
+
 int node_sync_leave(NodeSync* sync, int node_id) {
     if (!is_valid_node(sync, node_id)) {
         fprintf(stderr, "node_sync_leave: invalid node id %d\n", node_id);

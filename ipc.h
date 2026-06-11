@@ -10,9 +10,11 @@
 
 typedef enum {
     IPC_MSG_ARRIVED,
+    IPC_MSG_WAITING,
     IPC_MSG_FINISHED,
     IPC_MSG_ERROR
 } IpcMessageType;
+
 
 typedef struct {
     IpcMessageType type;

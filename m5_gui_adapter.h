@@ -43,6 +43,16 @@ void m5_gui_apply_arrival(
 );
 
 /*
+ * Receives an IPC WAITING message and marks the traveler as visually waiting
+ * outside the requested node.
+ */
+void m5_gui_apply_waiting(
+    const IpcMessage* message,
+    const Point* node_positions,
+    Point* traveler_positions
+);
+
+/*
  * Renders one frame of the Milestone 5 simulation.
  *
  * This function also advances the visual animation of each traveler:

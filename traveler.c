@@ -190,3 +190,143 @@ void run_child_traveler_m5(
     close(write_fd);
     exit(0);
 }
+
+/*
+ * Runs a milestone 6 child traveler process.
+ * The traveler computes its own path, synchronizes entry to each node,
+ * reports waiting/arrival states to the parent, and exits when done.
+ */
+void run_child_traveler_m6(
+    const Graph* graph,
+    int source,
+    int destination,
+    int write_fd,
+    int traveler_id,
+    NodeSync* sync
+) {
+    DijkstraResult* result;
+    Traveler traveler;
+    IpcMessage message;
+    int i;
+    int current_node;
+    int next_node;
+    int enter_status;
+
+    if (graph == NULL || sync == NULL) {
+        close(write_fd);
+        exit(1);
+    }
+
+    traveler.source = source;
+    traveler.destination = destination;
+    traveler.path = NULL;
+    traveler.path_length = 0;
+    traveler.pid = getpid();
+    traveler.finished = 0;
+
+    result = dijkstra(graph, source, destination);
+
+    if (result == NULL) {
+        close(write_fd);
+        exit(1);
+    }
+
+    if (!build_path_from_dijkstra(&traveler, result)) {
+        free_dijkstra_result(result);
+        close(write_fd);
+        exit(1);
+    }
+
+    for (i = 0; i < traveler.path_length; i++) {
+        current_node = traveler.path[i];
+
+        if (i + 1 < traveler.path_length) {
+            next_node = traveler.path[i + 1];
+        } else {
+            next_node = IPC_DESTINATION_NODE;
+        }
+
+        enter_status = node_sync_try_enter(sync, current_node);
+
+        if (enter_status == 1) {
+            /*
+             * The node is currently occupied.
+             * Report that this traveler is waiting outside the node,
+             * then block until the semaphore allows entry.
+             */
+            message.type = IPC_MSG_WAITING;
+            message.pid = getpid();
+            message.traveler_id = traveler_id;
+            message.current_node = current_node;
+            message.next_node = next_node;
+
+            if (ipc_send_message(write_fd, &message) != 0) {
+                free(traveler.path);
+                free_dijkstra_result(result);
+                close(write_fd);
+                exit(1);
+            }
+
+            if (node_sync_enter(sync, current_node) != 0) {
+                free(traveler.path);
+                free_dijkstra_result(result);
+                close(write_fd);
+                exit(1);
+            }
+        } else if (enter_status != 0) {
+            free(traveler.path);
+            free_dijkstra_result(result);
+            close(write_fd);
+            exit(1);
+        }
+
+        /*
+         * Critical section:
+         * while the traveler is sleeping inside the node,
+         * no other traveler may enter the same node.
+         */
+        sleep(1);
+
+        if (node_sync_leave(sync, current_node) != 0) {
+            free(traveler.path);
+            free_dijkstra_result(result);
+            close(write_fd);
+            exit(1);
+        }
+
+        /*
+         * After leaving the node, report ARRIVED to keep the existing GUI logic.
+         * The GUI uses next_node to animate the traveler toward the next node.
+         */
+        message.type = IPC_MSG_ARRIVED;
+        message.pid = getpid();
+        message.traveler_id = traveler_id;
+        message.current_node = current_node;
+        message.next_node = next_node;
+
+        if (ipc_send_message(write_fd, &message) != 0) {
+            free(traveler.path);
+            free_dijkstra_result(result);
+            close(write_fd);
+            exit(1);
+        }
+    }
+
+    message.type = IPC_MSG_FINISHED;
+    message.pid = getpid();
+    message.traveler_id = traveler_id;
+    message.current_node = destination;
+    message.next_node = IPC_DESTINATION_NODE;
+
+    if (ipc_send_message(write_fd, &message) != 0) {
+        free(traveler.path);
+        free_dijkstra_result(result);
+        close(write_fd);
+        exit(1);
+    }
+
+    free(traveler.path);
+    free_dijkstra_result(result);
+    close(write_fd);
+    exit(0);
+}

@@ -14,6 +14,8 @@
 #include "traveler.h"
 #include "ipc.h"
 #include "m5_gui_adapter.h"
+#include "node_sync.h"
+
 
 static void print_ipc_message(const IpcMessage* message) {
     if (message == NULL) {
@@ -22,7 +24,7 @@ static void print_ipc_message(const IpcMessage* message) {
 
     if (message->type == IPC_MSG_ARRIVED) {
         if (message->next_node == IPC_DESTINATION_NODE) {
-            printf("[PID=%d] arrived at node %d | DESTINATION\n",
+            printf("[PID=%d] arrived at destination node %d\n",
                    (int)message->pid,
                    message->current_node);
         } else {
@@ -31,6 +33,10 @@ static void print_ipc_message(const IpcMessage* message) {
                    message->current_node,
                    message->next_node);
         }
+    } else if (message->type == IPC_MSG_WAITING) {
+        printf("[PID=%d] waiting outside node %d\n",
+               (int)message->pid,
+               message->current_node);
     } else if (message->type == IPC_MSG_FINISHED) {
         printf("[PID=%d] finished\n", (int)message->pid);
     } else if (message->type == IPC_MSG_ERROR) {
@@ -112,6 +118,73 @@ static int create_children(
             /*
              * Safety fallback.
              * run_child_traveler_m5 should close write_fd and exit by itself.
+             */
+            close(pipes[i][1]);
+            exit(0);
+        }
+
+        /*
+         * Parent process:
+         * the parent reads IPC messages from the child.
+         */
+        close(pipes[i][1]);
+        pipes[i][1] = -1;
+    }
+
+    return 1;
+}
+
+/*
+ * Creates milestone 6 traveler child processes.
+ * Each child receives the shared NodeSync object and uses it to synchronize
+ * access to graph nodes while still computing and following its own path.
+ */
+static int create_children_m6(
+    const Graph* graph,
+    Traveler* travelers,
+    int traveler_count,
+    int (*pipes)[2],
+    NodeSync* sync
+) {
+    int i;
+
+    if (sync == NULL) {
+        return 0;
+    }
+
+    for (i = 0; i < traveler_count; i++) {
+        if (pipe(pipes[i]) == -1) {
+            perror("pipe");
+            return 0;
+        }
+
+        travelers[i].pid = fork();
+
+        if (travelers[i].pid < 0) {
+            perror("fork");
+            return 0;
+        }
+
+        if (travelers[i].pid == 0) {
+            /*
+             * Child process:
+             * the child writes IPC messages to the parent.
+             * The child does not print to the screen.
+             */
+            close(pipes[i][0]);
+
+            run_child_traveler_m6(
+                graph,
+                travelers[i].source,
+                travelers[i].destination,
+                pipes[i][1],
+                i,
+                sync
+            );
+
+            /*
+             * Safety fallback.
+             * run_child_traveler_m6 should close write_fd and exit by itself.
              */
             close(pipes[i][1]);
             exit(0);
@@ -253,6 +326,14 @@ static int read_messages_from_children(
 
                 print_ipc_message(&message);
 
+                if (message.type == IPC_MSG_WAITING) {
+                    m5_gui_apply_waiting(
+                        &message,
+                        node_positions,
+                        traveler_positions
+                    );
+                }
+
                 if (message.type == IPC_MSG_ARRIVED) {
                     m5_gui_apply_arrival(
                         &message,
@@ -376,6 +457,111 @@ int run_milestone5(const char* input_file) {
     wait_for_all_children(travelers, traveler_count);
 
     m5_gui_free_state(node_positions, traveler_positions);
+
+    cleanup_resources(graph, travelers, pipes, traveler_count);
+
+    if (!success) {
+        return 1;
+    }
+
+    return 0;
+}
+/*
+ * Runs milestone 6.
+ * This version keeps travelers autonomous, but gives all child processes
+ * access to the same NodeSync object so node entry becomes a critical section.
+ */
+int run_milestone6(const char* input_file) {
+    Graph* graph;
+    Traveler* travelers;
+    int traveler_count;
+    int (*pipes)[2];
+    Point* node_positions;
+    Point* traveler_positions;
+    NodeSync* sync;
+    int i;
+    int success;
+
+    graph = NULL;
+    travelers = NULL;
+    traveler_count = 0;
+    pipes = NULL;
+    node_positions = NULL;
+    traveler_positions = NULL;
+    sync = NULL;
+    success = 1;
+
+    if (input_file == NULL) {
+        fprintf(stderr, "Error: input file is NULL\n");
+        return 1;
+    }
+
+    if (!read_simulation_from_file(input_file, &graph, &travelers, &traveler_count)) {
+        fprintf(stderr, "Error: failed to read simulation file\n");
+        return 1;
+    }
+
+    if (traveler_count <= 0) {
+        fprintf(stderr, "Error: no travelers found\n");
+        cleanup_resources(graph, travelers, pipes, traveler_count);
+        return 1;
+    }
+
+    sync = node_sync_create(graph->num_vertices);
+    if (sync == NULL) {
+        fprintf(stderr, "Error: failed to create node synchronization\n");
+        cleanup_resources(graph, travelers, pipes, traveler_count);
+        return 1;
+    }
+
+    pipes = malloc((size_t)traveler_count * sizeof(int[2]));
+    if (pipes == NULL) {
+        fprintf(stderr, "Error: memory allocation failed\n");
+        node_sync_destroy(sync);
+        cleanup_resources(graph, travelers, pipes, traveler_count);
+        return 1;
+    }
+
+    for (i = 0; i < traveler_count; i++) {
+        pipes[i][0] = -1;
+        pipes[i][1] = -1;
+        travelers[i].finished = 0;
+        travelers[i].pid = -1;
+    }
+
+    if (!m5_gui_init_state(
+            graph,
+            travelers,
+            traveler_count,
+            &node_positions,
+            &traveler_positions)) {
+        fprintf(stderr, "Error: failed to initialize milestone 6 GUI state\n");
+        node_sync_destroy(sync);
+        cleanup_resources(graph, travelers, pipes, traveler_count);
+        return 1;
+    }
+
+    if (!create_children_m6(graph, travelers, traveler_count, pipes, sync)) {
+        success = 0;
+    }
+
+    if (success) {
+        if (!read_messages_from_children(
+                travelers,
+                traveler_count,
+                pipes,
+                graph,
+                node_positions,
+                traveler_positions)) {
+            success = 0;
+        }
+    }
+
+    wait_for_all_children(travelers, traveler_count);
+
+    m5_gui_free_state(node_positions, traveler_positions);
+
+    node_sync_destroy(sync);
 
     cleanup_resources(graph, travelers, pipes, traveler_count);
 
