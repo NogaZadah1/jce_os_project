@@ -191,6 +191,43 @@ void run_child_traveler_m5(
     exit(0);
 }
 
+
+static int get_edge_weight_for_traveler_delay(const Graph* graph, int src, int dst) {
+    Edge* edge;
+
+    if (graph == NULL || src < 0 || src >= graph->num_vertices) {
+        return 1;
+    }
+
+    edge = graph->adj_lists[src];
+
+    while (edge != NULL) {
+        if (edge->dest == dst) {
+            return edge->weight;
+        }
+
+        edge = edge->next;
+    }
+
+    return 1;
+}
+
+static void sleep_edge_duration_m6(const Graph* graph, int src, int dst) {
+    int weight;
+
+    weight = get_edge_weight_for_traveler_delay(graph, src, dst);
+
+    if (weight <= 0) {
+        weight = 1;
+    }
+
+    /*
+     * Keep the child process timing close to the GUI animation timing,
+     * without using usleep, so compilation stays clean under C99.
+     */
+    sleep((unsigned int)((weight + 2) / 3));
+}
+
 /*
  * Runs a milestone 6 child traveler process.
  * The traveler computes its own path, synchronizes entry to each node,
@@ -309,6 +346,10 @@ void run_child_traveler_m6(
             free_dijkstra_result(result);
             close(write_fd);
             exit(1);
+        }
+
+        if (next_node != IPC_DESTINATION_NODE) {
+            sleep_edge_duration_m6(graph, current_node, next_node);
         }
     }
 
