@@ -2,21 +2,23 @@
 
 This project implements a directed weighted graph traffic simulation in C for Linux.
 
-The project starts with a command-line implementation of Dijkstra's shortest path algorithm and gradually extends it into a Raylib-based graphical simulation with animation, multiple traveler processes, and IPC communication between child processes and a parent process.
+The project starts with a command-line implementation of Dijkstra's shortest path algorithm and gradually extends it into a Raylib-based graphical simulation with animation, multiple traveler processes, IPC communication, node synchronization, and parent-controlled scheduling.
 
 ---
 
 ## Main Features
 
-- Directed weighted graph represented with adjacency lists
-- Graph and traveler input parsing from text files
-- Dijkstra shortest path calculation
-- Static graph visualization with Raylib
-- Animated movement along shortest paths
-- Multiple travelers moving simultaneously
-- Child process creation using `fork()`
-- IPC communication using pipes
-- Parent-controlled GUI updates and terminal logging
+* Directed weighted graph represented with adjacency lists
+* Graph and traveler input parsing from text files
+* Dijkstra shortest path calculation
+* Static graph visualization with Raylib
+* Animated movement along shortest paths
+* Multiple travelers moving simultaneously
+* Child process creation using `fork()`
+* IPC communication using pipes
+* Parent-controlled GUI updates and terminal logging
+* Node synchronization using POSIX semaphores
+* Parent-controlled FCFS and SJF scheduling for waiting travelers
 
 ---
 
@@ -88,6 +90,23 @@ Example:
 ./sim input_milestone6_waiting.txt
 ```
 
+### Milestone 7 - FCFS and SJF Scheduling
+
+```bash
+make milestone7
+./sim -schd fcfs input_milestone7.txt
+./sim -schd sjf input_milestone7.txt
+```
+
+The `-schd` argument selects the scheduling algorithm used by the parent process.
+
+Supported algorithms:
+
+```text
+fcfs - First Come First Served
+sjf  - Shortest Job First
+```
+
 ---
 
 ## Milestone Summary
@@ -146,6 +165,21 @@ If the node is already occupied, the traveler sends `IPC_MSG_WAITING` to the par
 
 This design keeps the child processes autonomous while enforcing mutual exclusion for every node. The shared `node_occupancy` array in `NodeSync` is used as a runtime validation check and must never become greater than `1` for any node.
 
+### Milestone 7 - FCFS and SJF Scheduling
+
+Milestone 7 adds parent-controlled scheduling for travelers waiting outside occupied nodes.
+
+Instead of allowing blocked child processes to enter a node in an arbitrary semaphore order, the parent process manages a separate waiting queue for every graph node using `scheduler.c` and `scheduler.h`.
+
+When a traveler cannot enter a node immediately, it sends an `IPC_MSG_WAITING` message to the parent. The parent inserts the traveler into the scheduler queue of that node. When the node becomes available, the parent selects the next traveler according to the selected scheduling algorithm and allows only that traveler to continue.
+
+Two scheduling algorithms are supported:
+
+* `FCFS` - First Come First Served. Travelers enter according to their waiting arrival order.
+* `SJF` - Shortest Job First. The traveler with the shortest remaining job value is selected first. If two travelers have the same value, FCFS order is used as a tie-breaker.
+
+This design keeps the synchronization mechanism from Milestone 6, but moves the scheduling decision to the parent process as required for Milestone 7.
+
 ---
 
 ## Input Formats
@@ -186,7 +220,7 @@ Example output:
 
 ### Extended Travelers Input Format
 
-Used by milestones 4-6:
+Used by milestones 4-7:
 
 ```text
 N M
@@ -214,6 +248,28 @@ Example:
 0 4
 2 3
 ```
+
+### Milestone 7 Scheduling Example
+
+`input_milestone7.txt` is used to demonstrate the difference between FCFS and SJF.
+
+Run FCFS:
+
+```bash
+make milestone7
+./sim -schd fcfs input_milestone7.txt
+```
+
+Run SJF:
+
+```bash
+make milestone7
+./sim -schd sjf input_milestone7.txt
+```
+
+In FCFS, travelers waiting for the same node are released according to the order in which they started waiting.
+
+In SJF, the parent process selects the traveler with the shortest remaining job value first.
 
 ---
 
@@ -251,18 +307,20 @@ typedef struct {
     int traveler_id;
     int current_node;
     int next_node;
+    int remaining_job;
 } IpcMessage;
 ```
 
 Message fields:
 
-| Field          | Meaning                                      |
-| -------------- | -------------------------------------------- |
-| `type`         | Message type: arrived, waiting, finished, or error |
-| `pid`          | Child process ID                             |
-| `traveler_id`  | Traveler index in the travelers array        |
-| `current_node` | Node reached by the traveler                 |
-| `next_node`    | Next node in the path, or destination marker |
+| Field           | Meaning                                            |
+| --------------- | -------------------------------------------------- |
+| `type`          | Message type: arrived, waiting, finished, or error |
+| `pid`           | Child process ID                                   |
+| `traveler_id`   | Traveler index in the travelers array              |
+| `current_node`  | Node reached by the traveler                       |
+| `next_node`     | Next node in the path, or destination marker       |
+| `remaining_job` | Remaining job value used by SJF scheduling         |
 
 ---
 
@@ -282,29 +340,61 @@ Message fields:
 
 ---
 
+## Milestone 7 Log Example
+
+FCFS example:
+
+```text
+[PID=4566] waiting outside node 4
+[PID=4567] waiting outside node 4
+[PID=4568] waiting outside node 4
+[PID=4566] arrived at node 4 | next node: 5
+[PID=4567] arrived at node 4 | next node: 5
+[PID=4568] arrived at node 4 | next node: 1
+```
+
+SJF example:
+
+```text
+[PID=4579] waiting outside node 4
+[PID=4580] waiting outside node 4
+[PID=4581] waiting outside node 4
+[PID=4581] arrived at node 4 | next node: 1
+[PID=4580] arrived at node 4 | next node: 5
+[PID=4579] arrived at node 4 | next node: 5
+```
+
+The examples show that the parent process changes the release order according to the selected scheduling algorithm.
+
+---
+
 ## Files
 
-| File                                         | Description                                                |
-| -------------------------------------------- | ---------------------------------------------------------- |
-| `graph.c`, `graph.h`                         | Graph representation using adjacency lists                 |
-| `dijkstra.c`, `dijkstra.h`                   | Dijkstra shortest path algorithm                           |
-| `file_reader.c`, `file_reader.h`             | Input parsing for graph and traveler files                 |
-| `gui.c`, `gui.h`                             | Shared Raylib drawing and rendering functions              |
-| `traveler.c`, `traveler.h`                   | Traveler data, child process logic, and traveler utilities |
-| `ipc.c`, `ipc.h`                             | IPC message structure and pipe send/read helpers           |
-| `parent_controller.c`, `parent_controller.h` | Parent process logic for milestones 5-6                    |
+| File                                         | Description                                                                          |
+| -------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `graph.c`, `graph.h`                         | Graph representation using adjacency lists                                           |
+| `dijkstra.c`, `dijkstra.h`                   | Dijkstra shortest path algorithm                                                     |
+| `file_reader.c`, `file_reader.h`             | Input parsing for graph and traveler files                                           |
+| `gui.c`, `gui.h`                             | Shared Raylib drawing and rendering functions                                        |
+| `traveler.c`, `traveler.h`                   | Traveler data, child process logic, and traveler utilities                           |
+| `ipc.c`, `ipc.h`                             | IPC message structure and pipe send/read helpers                                     |
+| `node_sync.c`, `node_sync.h`                 | POSIX semaphore synchronization for graph nodes                                      |
+| `scheduler.c`, `scheduler.h`                 | Parent-controlled per-node waiting queues for FCFS and SJF scheduling                |
+| `parent_controller.c`, `parent_controller.h` | Parent process logic for milestones 5-7                                              |
 | `m5_gui_adapter.c`, `m5_gui_adapter.h`       | Adapter between IPC state updates and GUI rendering, including waiting visualization |
-| `main_dijkstra.c`                            | Entry point for milestone 1                                |
-| `main_static.c`                              | Entry point for milestone 2                                |
-| `main_sim.c`                                 | Entry point for milestone 3                                |
-| `main_m4.c`                                  | Entry point for milestone 4                                |
-| `main_m5.c`                                  | Entry point for milestone 5                                |
-| `main_m6.c`                                  | Entry point for milestone 6                                |
-| `input.txt`                                  | Example input for milestones 1-3                           |
-| `input_m4.txt`                               | Example input for milestone 4                              |
-| `input_milestone5.txt`                       | Example input for milestone 5                              |
-| `input_milestone6_waiting.txt`                | Example input for milestone 6 waiting scenario             |
-| `Makefile`                                   | Build targets for all milestones                           |
+| `main_dijkstra.c`                            | Entry point for milestone 1                                                          |
+| `main_static.c`                              | Entry point for milestone 2                                                          |
+| `main_sim.c`                                 | Entry point for milestone 3                                                          |
+| `main_m4.c`                                  | Entry point for milestone 4                                                          |
+| `main_m5.c`                                  | Entry point for milestone 5                                                          |
+| `main_m6.c`                                  | Entry point for milestone 6                                                          |
+| `main_m7.c`                                  | Entry point for milestone 7                                                          |
+| `input.txt`                                  | Example input for milestones 1-3                                                     |
+| `input_m4.txt`                               | Example input for milestone 4                                                        |
+| `input_milestone5.txt`                       | Example input for milestone 5                                                        |
+| `input_milestone6_waiting.txt`               | Example input for milestone 6 waiting scenario                                       |
+| `input_milestone7.txt`                       | Example input for milestone 7 FCFS/SJF scheduling                                    |
+| `Makefile`                                   | Build targets for all milestones                                                     |
 
 ---
 
@@ -317,5 +407,4 @@ Message fields:
 * Milestone 4 uses multiple child processes
 * Milestone 5 uses pipes for IPC
 * Milestone 6 uses POSIX named semaphores for node synchronization
-
-````
+* Milestone 7 adds parent-controlled FCFS and SJF scheduling for waiting travelers
