@@ -7,6 +7,12 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+static const char* g_status_label = NULL;
+
+void gui_set_status_label(const char* label) {
+    g_status_label = label;
+}
+
 static void draw_edge_weight(int x, int y, int weight) {
     const int badge_r = 18;
     const char* text = TextFormat("%d", weight);
@@ -164,7 +170,12 @@ static void draw_traveler_marker(
     Color marker_color = color;
 
     if (is_waiting) {
-        marker_color = ORANGE;
+        marker_color = RAYWHITE;
+    }
+
+    if (is_waiting) {
+        DrawCircleV(p, radius + 7.0f, RED);
+        DrawCircleV(p, radius + 4.0f, ORANGE);
     }
 
     DrawCircleV(p, radius + 2.0f, RAYWHITE);
@@ -347,6 +358,9 @@ void render_scene(
         DrawRectangleRounded(play_button, 0.25f, 8, (Color){30, 90, 150, 255});
         DrawRectangleRoundedLines(play_button, 0.25f, 8, (Color){255, 255, 255, 255});
         DrawText(button_text, (int)(play_button.x + 35), (int)(play_button.y + 12), 22, RAYWHITE);
+    }
+    if (g_status_label != NULL) {
+        DrawText(g_status_label, 190, 42, 24, RAYWHITE);
     }
 
     if (arrived == 1) {

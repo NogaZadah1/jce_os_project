@@ -41,4 +41,6 @@ void render_scene(
     const int* traveler_waiting_flags
 );
 
+void gui_set_status_label(const char* label);
+
 #endif

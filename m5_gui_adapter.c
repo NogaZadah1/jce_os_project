@@ -32,7 +32,8 @@ typedef struct {
 
 static M5TravelerVisualState* g_visual_states = NULL;
 static int g_traveler_count = 0;
-static int g_m5_is_playing = 1;
+static int g_m5_is_playing = 0;
+static int g_m5_all_arrived = 0;
 static const Graph* g_graph = NULL;
 
 static int queue_push(M5TravelerVisualState* state, int node) {
@@ -79,6 +80,14 @@ static void update_play_button_state(void) {
         CheckCollisionPointRec(GetMousePosition(), play_button)) {
         g_m5_is_playing = !g_m5_is_playing;
     }
+}
+
+int m5_gui_is_playing(void) {
+    return g_m5_is_playing;
+}
+
+void m5_gui_set_all_arrived(int all_arrived) {
+    g_m5_all_arrived = all_arrived;
 }
 
 static int get_edge_weight_for_animation(
@@ -489,6 +498,7 @@ void m5_gui_render_frame(
     int* food_alive;
     int* traveler_waiting_flags;
     int i;
+    int visual_animation_finished;
     Point* mutable_traveler_positions;
 
     if (graph == NULL || node_positions == NULL ||
@@ -535,10 +545,19 @@ void m5_gui_render_frame(
         food_alive[i] = 1;
     }
 
+    visual_animation_finished = 1;
+
     for (i = 0; i < traveler_count; i++) {
         traveler_waiting_flags[i] = 0;
         if (g_visual_states != NULL && i < g_traveler_count) {
             traveler_waiting_flags[i] = g_visual_states[i].is_blocked_waiting;
+
+            if (g_visual_states[i].is_blocked_waiting ||
+                g_visual_states[i].is_moving ||
+                g_visual_states[i].is_waiting ||
+                g_visual_states[i].queue_count > 0) {
+                visual_animation_finished = 0;
+            }
         }
     }
 
@@ -551,7 +570,7 @@ void m5_gui_render_frame(
         0.0f,
         0.0f,
         g_m5_is_playing,
-        0,
+        g_m5_all_arrived && visual_animation_finished,
         travelers,
         traveler_count,
         mutable_traveler_positions,
@@ -579,7 +598,8 @@ void m5_gui_free_state(
     }
 
     g_traveler_count = 0;
-    g_m5_is_playing = 1;
+    g_m5_is_playing = 0;
+    g_m5_all_arrived = 0;
     g_graph = NULL;
 
     free(node_positions);

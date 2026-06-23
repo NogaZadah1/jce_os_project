@@ -45,5 +45,18 @@ void run_child_traveler_m6(
     NodeSync* sync
 );
 
+/*
+ * Runs a milestone 7 child traveler.
+ * The child requests entry permission from the parent before every node.
+ */
+void run_child_traveler_m7(
+    const Graph* graph,
+    int source,
+    int destination,
+    int write_fd,
+    int grant_read_fd,
+    int traveler_id,
+    NodeSync* sync
+);
 
 #endif

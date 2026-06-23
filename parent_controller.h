@@ -10,4 +10,19 @@ int run_milestone5(const char* input_file);
  */
 int run_milestone6(const char* input_file);
 
+typedef enum {
+    SCHEDULING_FCFS,
+    SCHEDULING_SJF
+} SchedulingAlgorithm;
+
+/*
+ * Runs milestone 7 with parent-controlled node scheduling.
+ * The selected algorithm determines which waiting traveler
+ * receives permission to enter each node.
+ */
+int run_milestone7(
+    const char* input_file,
+    SchedulingAlgorithm algorithm
+);
+
 #endif

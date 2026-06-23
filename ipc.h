@@ -11,6 +11,7 @@
 typedef enum {
     IPC_MSG_ARRIVED,
     IPC_MSG_WAITING,
+    IPC_MSG_GRANT_ENTRY,
     IPC_MSG_FINISHED,
     IPC_MSG_ERROR
 } IpcMessageType;
@@ -22,8 +23,13 @@ typedef struct {
     int traveler_id;
     int current_node;
     int next_node;
-} IpcMessage;
+    int remaining_cost;
+    /*
+     * Total route cost remaining until the traveler's destination.
+     * Used for SJF when the traveler sends IPC_MSG_WAITING.
+     */
 
+} IpcMessage;
 int ipc_send_message(int write_fd, const IpcMessage* message);
 int ipc_read_message(int read_fd, IpcMessage* message);
 

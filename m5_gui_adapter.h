@@ -71,6 +71,10 @@ void m5_gui_render_frame(
 /*
  * Frees all GUI state allocated by m5_gui_init_state.
  */
+int m5_gui_is_playing(void);
+
+void m5_gui_set_all_arrived(int all_arrived);
+
 void m5_gui_free_state(
     Point* node_positions,
     Point* traveler_positions

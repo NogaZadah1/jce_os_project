@@ -131,7 +131,7 @@ void run_child_traveler_m5(
 ) {
     DijkstraResult* result;
     Traveler traveler;
-    IpcMessage message;
+    IpcMessage message = {0};
     int i;
 
     traveler.source = source;
@@ -158,6 +158,7 @@ void run_child_traveler_m5(
         message.pid = getpid();
         message.traveler_id = traveler_id;
         message.current_node = traveler.path[i];
+        message.remaining_cost = 0;
 
         if (i + 1 < traveler.path_length) {
             message.next_node = traveler.path[i + 1];
@@ -177,6 +178,7 @@ void run_child_traveler_m5(
     message.traveler_id = traveler_id;
     message.current_node = destination;
     message.next_node = IPC_DESTINATION_NODE;
+    message.remaining_cost = 0;
 
     if (ipc_send_message(write_fd, &message) != 0) {
         free(traveler.path);
@@ -189,6 +191,43 @@ void run_child_traveler_m5(
     free_dijkstra_result(result);
     close(write_fd);
     exit(0);
+}
+
+
+static int get_edge_weight_for_traveler_delay(const Graph* graph, int src, int dst) {
+    Edge* edge;
+
+    if (graph == NULL || src < 0 || src >= graph->num_vertices) {
+        return 1;
+    }
+
+    edge = graph->adj_lists[src];
+
+    while (edge != NULL) {
+        if (edge->dest == dst) {
+            return edge->weight;
+        }
+
+        edge = edge->next;
+    }
+
+    return 1;
+}
+
+static void sleep_edge_duration_m6(const Graph* graph, int src, int dst) {
+    int weight;
+
+    weight = get_edge_weight_for_traveler_delay(graph, src, dst);
+
+    if (weight <= 0) {
+        weight = 1;
+    }
+
+    /*
+     * Keep the child process timing close to the GUI animation timing,
+     * without using usleep, so compilation stays clean under C99.
+     */
+    sleep((unsigned int)((weight + 2) / 3));
 }
 
 /*
@@ -259,6 +298,8 @@ void run_child_traveler_m6(
             message.traveler_id = traveler_id;
             message.current_node = current_node;
             message.next_node = next_node;
+            message.remaining_cost =
+            result->dist[destination] - result->dist[current_node];
 
             if (ipc_send_message(write_fd, &message) != 0) {
                 free(traveler.path);
@@ -303,12 +344,17 @@ void run_child_traveler_m6(
         message.traveler_id = traveler_id;
         message.current_node = current_node;
         message.next_node = next_node;
+        message.remaining_cost = 0;
 
         if (ipc_send_message(write_fd, &message) != 0) {
             free(traveler.path);
             free_dijkstra_result(result);
             close(write_fd);
             exit(1);
+        }
+
+        if (next_node != IPC_DESTINATION_NODE) {
+            sleep_edge_duration_m6(graph, current_node, next_node);
         }
     }
 
@@ -317,6 +363,7 @@ void run_child_traveler_m6(
     message.traveler_id = traveler_id;
     message.current_node = destination;
     message.next_node = IPC_DESTINATION_NODE;
+    message.remaining_cost = 0;
 
     if (ipc_send_message(write_fd, &message) != 0) {
         free(traveler.path);
@@ -328,5 +375,159 @@ void run_child_traveler_m6(
     free(traveler.path);
     free_dijkstra_result(result);
     close(write_fd);
+    exit(0);
+}
+
+void run_child_traveler_m7(
+    const Graph* graph,
+    int source,
+    int destination,
+    int write_fd,
+    int grant_read_fd,
+    int traveler_id,
+    NodeSync* sync
+) {
+    DijkstraResult* result;
+    Traveler traveler;
+    IpcMessage message = {0};
+    IpcMessage grant_message;
+    int i;
+    int current_node;
+    int next_node;
+    int read_result;
+
+    if (graph == NULL || sync == NULL) {
+        close(write_fd);
+        close(grant_read_fd);
+        exit(1);
+    }
+
+    traveler.source = source;
+    traveler.destination = destination;
+    traveler.path = NULL;
+    traveler.path_length = 0;
+    traveler.pid = getpid();
+    traveler.finished = 0;
+
+    result = dijkstra(graph, source, destination);
+
+    if (result == NULL) {
+        close(write_fd);
+        close(grant_read_fd);
+        exit(1);
+    }
+
+    if (!build_path_from_dijkstra(&traveler, result)) {
+        free_dijkstra_result(result);
+        close(write_fd);
+        close(grant_read_fd);
+        exit(1);
+    }
+
+    for (i = 0; i < traveler.path_length; i++) {
+        current_node = traveler.path[i];
+
+        if (i + 1 < traveler.path_length) {
+            next_node = traveler.path[i + 1];
+        } else {
+            next_node = IPC_DESTINATION_NODE;
+        }
+
+        /*
+         * In milestone 7 every node entry must be approved by the parent.
+         */
+        message.type = IPC_MSG_WAITING;
+        message.pid = getpid();
+        message.traveler_id = traveler_id;
+        message.current_node = current_node;
+        message.next_node = next_node;
+        message.remaining_cost =
+            result->dist[destination] - result->dist[current_node];
+
+        if (ipc_send_message(write_fd, &message) != 0) {
+            free(traveler.path);
+            free_dijkstra_result(result);
+            close(write_fd);
+            close(grant_read_fd);
+            exit(1);
+        }
+
+        /*
+         * Wait until the parent selects this traveler and sends GRANT_ENTRY.
+         */
+        read_result = ipc_read_message(grant_read_fd, &grant_message);
+
+        if (read_result != 1 ||
+            grant_message.type != IPC_MSG_GRANT_ENTRY ||
+            grant_message.traveler_id != traveler_id ||
+            grant_message.current_node != current_node) {
+            free(traveler.path);
+            free_dijkstra_result(result);
+            close(write_fd);
+            close(grant_read_fd);
+            exit(1);
+        }
+
+        /*
+         * The parent selected this traveler.
+         * The semaphore remains a safety layer against double entry.
+         */
+        if (node_sync_enter(sync, current_node) != 0) {
+            free(traveler.path);
+            free_dijkstra_result(result);
+            close(write_fd);
+            close(grant_read_fd);
+            exit(1);
+        }
+
+        sleep(1);
+
+        if (node_sync_leave(sync, current_node) != 0) {
+            free(traveler.path);
+            free_dijkstra_result(result);
+            close(write_fd);
+            close(grant_read_fd);
+            exit(1);
+        }
+
+        message.type = IPC_MSG_ARRIVED;
+        message.pid = getpid();
+        message.traveler_id = traveler_id;
+        message.current_node = current_node;
+        message.next_node = next_node;
+        message.remaining_cost = 0;
+
+        if (ipc_send_message(write_fd, &message) != 0) {
+            free(traveler.path);
+            free_dijkstra_result(result);
+            close(write_fd);
+            close(grant_read_fd);
+            exit(1);
+        }
+
+        if (next_node != IPC_DESTINATION_NODE) {
+            sleep_edge_duration_m6(graph, current_node, next_node);
+        }
+    }
+
+    message.type = IPC_MSG_FINISHED;
+    message.pid = getpid();
+    message.traveler_id = traveler_id;
+    message.current_node = destination;
+    message.next_node = IPC_DESTINATION_NODE;
+    message.remaining_cost = 0;
+
+    if (ipc_send_message(write_fd, &message) != 0) {
+        free(traveler.path);
+        free_dijkstra_result(result);
+        close(write_fd);
+        close(grant_read_fd);
+        exit(1);
+    }
+
+    free(traveler.path);
+    free_dijkstra_result(result);
+    close(write_fd);
+    close(grant_read_fd);
     exit(0);
 }
