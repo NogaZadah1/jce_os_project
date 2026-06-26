@@ -104,6 +104,50 @@ int scheduler_enqueue_fcfs(
     return 0;
 }
 
+static void scheduler_print_waiting_queue(
+    const Scheduler* scheduler,
+    int node_id,
+    const char* algorithm
+) {
+    NodeQueue* queue;
+    SchedulerRequest* current;
+
+    if (!is_valid_node(scheduler, node_id)) {
+        return;
+    }
+
+    queue = &scheduler->node_queues[node_id];
+
+    printf("[SCHEDULER][%s] node %d waiting queue: ", algorithm, node_id);
+
+    if (queue->head == NULL) {
+        printf("empty\n");
+        fflush(stdout);
+        return;
+    }
+
+    current = queue->head;
+
+    while (current != NULL) {
+        printf(
+            "Traveler %d(pid=%d, remaining=%d, order=%lu)",
+            current->traveler_id,
+            (int)current->pid,
+            current->remaining_cost,
+            current->arrival_order
+        );
+
+        if (current->next != NULL) {
+            printf(" -> ");
+        }
+
+        current = current->next;
+    }
+
+    printf("\n");
+    fflush(stdout);
+}
+
 int scheduler_dequeue_fcfs(
     Scheduler* scheduler,
     int node_id,
@@ -122,12 +166,23 @@ int scheduler_dequeue_fcfs(
         return 0;
     }
 
+    scheduler_print_waiting_queue(scheduler, node_id, "FCFS");
+
     /*
      * FCFS:
      * the traveler at the front of the queue entered first,
      * so this traveler gets permission first.
      */
     request = queue->head;
+
+    printf(
+        "[SCHEDULER][FCFS] selected Traveler %d(pid=%d) for node %d because it is first in the waiting queue, order=%lu\n",
+        request->traveler_id,
+        (int)request->pid,
+        node_id,
+        request->arrival_order
+    );
+    fflush(stdout);
 
     queue->head = request->next;
 
@@ -166,6 +221,8 @@ int scheduler_dequeue_sjf(
         return 0;
     }
 
+    scheduler_print_waiting_queue(scheduler, node_id, "SJF");
+
     best = queue->head;
     best_previous = NULL;
     previous = queue->head;
@@ -182,6 +239,16 @@ int scheduler_dequeue_sjf(
         previous = current;
         current = current->next;
     }
+
+    printf(
+        "[SCHEDULER][SJF] selected Traveler %d(pid=%d) for node %d because it has the smallest remaining cost=%d; ties are resolved by arrival order=%lu\n",
+        best->traveler_id,
+        (int)best->pid,
+        node_id,
+        best->remaining_cost,
+     best->arrival_order
+    );
+    fflush(stdout);
 
     if (best_previous == NULL) {
         queue->head = best->next;
