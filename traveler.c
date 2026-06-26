@@ -433,9 +433,6 @@ void run_child_traveler_m7(
             next_node = IPC_DESTINATION_NODE;
         }
 
-        /*
-         * In milestone 7 every node entry must be approved by the parent.
-         */
         message.type = IPC_MSG_WAITING;
         message.pid = getpid();
         message.traveler_id = traveler_id;
@@ -452,9 +449,6 @@ void run_child_traveler_m7(
             exit(1);
         }
 
-        /*
-         * Wait until the parent selects this traveler and sends GRANT_ENTRY.
-         */
         read_result = ipc_read_message(grant_read_fd, &grant_message);
 
         if (read_result != 1 ||
@@ -468,10 +462,6 @@ void run_child_traveler_m7(
             exit(1);
         }
 
-        /*
-         * The parent selected this traveler.
-         * The semaphore remains a safety layer against double entry.
-         */
         if (node_sync_enter(sync, current_node) != 0) {
             free(traveler.path);
             free_dijkstra_result(result);
@@ -517,13 +507,7 @@ void run_child_traveler_m7(
     message.next_node = IPC_DESTINATION_NODE;
     message.remaining_cost = 0;
 
-    if (ipc_send_message(write_fd, &message) != 0) {
-        free(traveler.path);
-        free_dijkstra_result(result);
-        close(write_fd);
-        close(grant_read_fd);
-        exit(1);
-    }
+    ipc_send_message(write_fd, &message);
 
     free(traveler.path);
     free_dijkstra_result(result);
